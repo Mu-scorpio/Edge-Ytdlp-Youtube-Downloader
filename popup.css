@@ -1,0 +1,27 @@
+:root { color-scheme: light dark; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+body { background: Canvas; color: CanvasText; margin: 0; min-width: 390px; }
+main { padding: 16px; }
+header { align-items: flex-start; display: flex; justify-content: space-between; gap: 12px; }
+h1 { font-size: 16px; letter-spacing: .01em; margin: 0 0 5px; }
+h2 { font-size: 13px; margin: 0; }
+.status { color: color-mix(in srgb, CanvasText 70%, Canvas); font-size: 12px; margin: 0; }
+.status.ok { color: #08783f; }.status.error { color: #b3261e; }
+.icon-button, .text-button { background: transparent; border: 0; border-radius: 5px; color: CanvasText; cursor: pointer; font: 12px "Segoe UI", "Microsoft YaHei", sans-serif; padding: 6px 8px; }
+.icon-button:hover, .text-button:hover, .icon-button:focus-visible, .text-button:focus-visible { background: color-mix(in srgb, CanvasText 9%, Canvas); outline: none; }
+.downloads { border-top: 1px solid color-mix(in srgb, CanvasText 13%, Canvas); margin-top: 15px; padding-top: 13px; }
+.section-heading { align-items: center; display: flex; justify-content: space-between; margin-bottom: 8px; }
+.task-list { display: grid; gap: 9px; max-height: 410px; overflow-y: auto; padding-right: 2px; }
+.task { background: color-mix(in srgb, CanvasText 6%, Canvas); border-radius: 7px; padding: 10px; }
+.task__row { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; }
+.task__title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task__state { color: color-mix(in srgb, CanvasText 64%, Canvas); flex: 0 0 auto; font-size: 11px; }
+.task__state.error { color: #b3261e; }.task__state.completed { color: #08783f; }
+.progress { background: color-mix(in srgb, CanvasText 14%, Canvas); border-radius: 2px; height: 3px; margin: 9px 0 7px; overflow: hidden; }
+.progress > span { background: #0f9d58; display: block; height: 100%; transition: width .25s ease; }
+.task.error .progress > span { background: #b3261e; }
+.task__meta { color: color-mix(in srgb, CanvasText 62%, Canvas); font-size: 11px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task__meta.path { color: color-mix(in srgb, CanvasText 75%, Canvas); margin-top: 3px; }
+.task__copy { background: transparent; border: 0; color: #065fd4; cursor: pointer; font: inherit; padding: 0; }
+.empty { color: color-mix(in srgb, CanvasText 62%, Canvas); font-size: 12px; margin: 12px 0; text-align: center; }
+.debug { border-top: 1px solid color-mix(in srgb, CanvasText 13%, Canvas); margin-top: 14px; padding-top: 13px; }
+#debug-log { background: color-mix(in srgb, CanvasText 6%, Canvas); border-radius: 6px; box-sizing: border-box; color: color-mix(in srgb, CanvasText 78%, Canvas); font: 10px/1.45 Consolas, monospace; margin: 0; max-height: 140px; overflow: auto; padding: 8px; white-space: pre-wrap; width: 100%; }

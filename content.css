@@ -1,0 +1,118 @@
+.ytdlp-download-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  color: var(--yt-spec-icon-active-other, #606060);
+  cursor: pointer;
+  display: inline-flex;
+  height: 40px;
+  justify-content: center;
+  margin-right: 2px;
+  padding: 0;
+  position: relative;
+  vertical-align: middle;
+  width: 40px;
+}
+
+.ytdlp-download-button[data-ytdlp-surface="playlist"] {
+  flex: 0 0 40px;
+  margin-inline: 0 2px;
+}
+
+.ytdlp-download-button[data-ytdlp-surface="watch"] {
+  flex: 0 0 40px;
+  margin-inline: 4px 0;
+}
+
+.ytdlp-download-button::after {
+  border: 2px solid transparent;
+  border-radius: 50%;
+  content: "";
+  inset: 3px;
+  pointer-events: none;
+  position: absolute;
+}
+
+.ytdlp-download-button:hover,
+.ytdlp-download-button:focus-visible {
+  background: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.1));
+  outline: none;
+}
+
+.ytdlp-download-button:active {
+  transform: scale(0.94);
+}
+
+.ytdlp-download-button[disabled] {
+  cursor: wait;
+  opacity: 1;
+}
+
+.ytdlp-download-button[data-download-state="downloading"],
+.ytdlp-download-button[data-download-state="queued"] {
+  color: #0f9d58;
+}
+
+.ytdlp-download-button[data-download-state="downloading"]::after {
+  background: conic-gradient(#0f9d58 var(--download-progress), transparent 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+}
+
+.ytdlp-download-button[data-download-state="completed"] {
+  color: #0f9d58;
+}
+
+.ytdlp-download-button[data-download-state="error"] {
+  color: #d93025;
+}
+
+.ytdlp-download-button__icon {
+  fill: currentColor;
+  height: 24px;
+  pointer-events: none;
+  width: 24px;
+}
+
+.ytdlp-download-button__percent {
+  background: var(--yt-spec-base-background, #fff);
+  border-radius: 4px;
+  bottom: 1px;
+  color: currentColor;
+  font: 700 9px/1 "Segoe UI", sans-serif;
+  left: 50%;
+  min-width: 16px;
+  padding: 1px;
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.ytdlp-download-toast {
+  background: var(--yt-spec-raised-background, #fff);
+  border-radius: 8px;
+  bottom: 24px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .22);
+  color: var(--yt-spec-text-primary, #0f0f0f);
+  display: grid;
+  gap: 3px;
+  left: 24px;
+  max-width: min(420px, calc(100vw - 48px));
+  padding: 13px 16px;
+  position: fixed;
+  z-index: 2200;
+}
+
+.ytdlp-download-toast strong { font: 600 14px/1.3 "Segoe UI", sans-serif; }
+.ytdlp-download-toast span { font: 13px/1.35 "Segoe UI", sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ytdlp-download-toast small { color: var(--yt-spec-text-secondary, #606060); font: 11px/1.3 "Segoe UI", sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ytdlp-download-toast[data-state="error"] strong { color: #d93025; }
+.ytdlp-download-toast[data-state="completed"] strong { color: #0f9d58; }
+
+html[dark] .ytdlp-download-button[data-download-state="success"] {
+  color: #72d69d;
+}
+
+html[dark] .ytdlp-download-button[data-download-state="error"] {
+  color: #ff8a80;
+}

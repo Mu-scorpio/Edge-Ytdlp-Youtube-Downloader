@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="options.css">
+  <title>YT-DLP 下载设置</title>
+</head>
+<body>
+  <main>
+    <h1>YT-DLP 下载设置</h1>
+    <p>留空 yt-dlp 路径会直接调用已加入系统 PATH 的 <code>yt-dlp.exe</code>。</p>
+    <form id="settings-form">
+      <label>
+        yt-dlp.exe 路径（可选）
+        <input id="yt-dlp-path" type="text" placeholder="C:\\Tools\\yt-dlp.exe">
+      </label>
+      <label>
+        下载目录（可选）
+        <input id="output-directory" type="text" placeholder="默认：Edge 浏览器下载目录">
+      </label>
+      <label>
+        代理地址（留空则直连）
+        <input id="proxy-url" type="text" placeholder="socks5h://127.0.0.1:7890">
+      </label>
+      <label class="checkbox-label">
+        <input id="auto-browser-cookies" type="checkbox">
+        自动使用当前 Edge 的 YouTube 登录 Cookie（推荐）
+      </label>
+      <label>
+        YouTube cookies.txt 路径（可选备用）
+        <input id="cookies-file-path" type="text" placeholder="C:\\path\\to\\youtube-cookies.txt">
+      </label>
+      <p class="hint">自动读取 Cookie 不会上传或保存。cookies.txt 是自动读取失败时的备用方案；不要分享该文件。</p>
+      <div class="actions">
+        <button type="submit">保存设置</button>
+        <button id="test-bridge" type="button" class="secondary">测试桥接器</button>
+      </div>
+      <p id="message" role="status"></p>
+    </form>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

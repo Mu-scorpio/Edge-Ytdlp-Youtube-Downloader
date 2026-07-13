@@ -1,0 +1,20 @@
+:root { color-scheme: light dark; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+body { background: Canvas; color: CanvasText; margin: 0; }
+main { margin: 52px auto; max-width: 660px; padding: 0 24px; }
+h1 { font-size: 24px; margin: 0 0 8px; }
+p { color: color-mix(in srgb, CanvasText 72%, Canvas); line-height: 1.55; text-wrap: pretty; }
+form { margin-top: 28px; }
+label { display: block; font-size: 14px; font-weight: 600; margin: 18px 0; }
+input { background: Canvas; border: 1px solid color-mix(in srgb, CanvasText 34%, Canvas); border-radius: 6px; box-sizing: border-box; color: CanvasText; display: block; font: inherit; font-weight: 400; margin-top: 7px; padding: 10px; width: 100%; }
+input:focus { border-color: #065fd4; outline: 2px solid color-mix(in srgb, #065fd4 30%, transparent); }
+.checkbox-label { align-items: center; display: flex; font-weight: 400; gap: 8px; }
+.checkbox-label input { accent-color: #065fd4; margin: 0; width: auto; }
+.hint { font-size: 12px; margin: -7px 0 12px; }
+.actions { display: flex; gap: 10px; margin-top: 24px; }
+button { background: #065fd4; border: 1px solid #065fd4; border-radius: 6px; color: white; cursor: pointer; font: inherit; font-weight: 600; padding: 9px 14px; }
+button:hover, button:focus-visible { background: #0356bd; outline: none; }
+.secondary { background: transparent; border-color: color-mix(in srgb, CanvasText 34%, Canvas); color: CanvasText; }
+.secondary:hover, .secondary:focus-visible { background: color-mix(in srgb, CanvasText 8%, Canvas); }
+#message { min-height: 1.55em; }
+#message.ok { color: #08783f; }
+#message.error { color: #b3261e; }

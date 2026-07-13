@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="popup.css">
+  <title>YT-DLP 下载器</title>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>YT-DLP 下载器</h1><p id="status" class="status" role="status">正在连接本机下载器…</p></div>
+      <button id="open-options" class="icon-button" type="button" aria-label="下载设置" title="下载设置">设置</button>
+    </header>
+    <section class="downloads" aria-labelledby="downloads-title">
+      <div class="section-heading"><h2 id="downloads-title">下载状态</h2><button id="clear-finished" class="text-button" type="button">清除已结束</button></div>
+      <div id="task-list" class="task-list"><p class="empty">暂无下载任务</p></div>
+    </section>
+    <section class="debug" aria-labelledby="debug-title">
+      <div class="section-heading"><h2 id="debug-title">诊断日志</h2><span><button id="copy-debug" class="text-button" type="button">复制</button><button id="clear-debug" class="text-button" type="button">清除</button></span></div>
+      <pre id="debug-log">正在读取日志…</pre>
+    </section>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
