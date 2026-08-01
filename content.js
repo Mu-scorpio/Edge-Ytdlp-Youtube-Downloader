@@ -145,10 +145,10 @@ function readableError(error) {
     return "扩展已更新或重新加载，请刷新此 YouTube 页面后重试";
   }
   if (/Specified native messaging host not found|host not found/i.test(message)) {
-    return "未注册本机桥接器。请在扩展目录运行 setup-native-host.ps1（会自动安装缺失下载工具），然后重新加载扩展";
+    return "未注册本机桥接器。请在扩展目录运行 setup-native-host.bat（会自动安装缺失下载工具），然后重新加载扩展";
   }
   if (/Access to the specified native messaging host is forbidden/i.test(message)) {
-    return "桥接器扩展 ID 不匹配。请用当前扩展 ID 重新运行 setup-native-host.ps1";
+    return "桥接器扩展 ID 不匹配。请用当前扩展 ID 重新运行 setup-native-host.bat";
   }
   if (/Could not establish connection|Receiving end does not exist/i.test(message)) {
     return "无法联系扩展后台。请在 edge://extensions 确认扩展已启用，并刷新本页";

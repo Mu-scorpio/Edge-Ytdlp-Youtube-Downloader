@@ -1,8 +1,13 @@
 # Changelog
 
+## v1.4.1 - 2026-08-02
+
+- 安装与打包脚本改为 `.bat`（不再使用 PowerShell 脚本）：`setup-native-host.bat`、`build-release.bat`。
+- Release 压缩包固定命名为 `edge-ytdlp-youtube-downloader.zip`（文件名不再附带版本号）。
+
 ## v1.4.0 - 2026-08-02
 
-- 新设备更稳健：`setup-native-host.ps1` 自动检测并尽量安装 Python / yt-dlp[default] / Node.js / FFmpeg。
+- 新设备更稳健：安装脚本自动检测并尽量安装 Python / yt-dlp[default] / Node.js / FFmpeg。
 - 桥接器支持依赖诊断与「安装缺失工具」；缺少 yt-dlp 时下载前会自动 `pip install`。
 - yt-dlp 解析支持 PATH 与 `python -m yt_dlp` 回退，适配 `pip --user` 未进 PATH 的新环境。
 - 错误提示改为可操作的中文说明（桥接未注册、机器人检测、格式不可用、代理 TLS、FFmpeg/Node 缺失等）。

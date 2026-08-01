@@ -48,7 +48,7 @@ function explainBridgeDisconnect(raw) {
   if (!message) {
     return (
       "本机桥接器已断开。\n" +
-      "请在扩展目录运行: .\\setup-native-host.ps1 -ExtensionId \"" + chrome.runtime.id + "\"\n" +
+      "请在扩展目录运行: setup-native-host.bat " + chrome.runtime.id + "\n" +
       "然后在 edge://extensions 重新加载扩展。"
     );
   }
@@ -57,7 +57,7 @@ function explainBridgeDisconnect(raw) {
       "未找到本机桥接器（Native Messaging Host）。\n" +
       "新设备需要先注册桥接：\n" +
       "1. 在扩展目录打开 PowerShell\n" +
-      "2. 运行 .\\setup-native-host.ps1 -ExtensionId \"" + chrome.runtime.id + "\"\n" +
+      "2. 运行 setup-native-host.bat " + chrome.runtime.id + "\n" +
       "3. 脚本会自动安装缺失的 yt-dlp / Node / FFmpeg（若可用 winget）\n" +
       "4. 在 edge://extensions 重新加载扩展并刷新 YouTube 页面\n" +
       `原始错误: ${message}`
@@ -67,7 +67,7 @@ function explainBridgeDisconnect(raw) {
     return (
       "本机桥接器拒绝连接（扩展 ID 不匹配）。\n" +
       "请用当前扩展 ID 重新注册：\n" +
-      ".\\setup-native-host.ps1 -ExtensionId \"" + chrome.runtime.id + "\"\n" +
+      "setup-native-host.bat " + chrome.runtime.id + "\n" +
       `原始错误: ${message}`
     );
   }
@@ -75,11 +75,11 @@ function explainBridgeDisconnect(raw) {
     return (
       "本机桥接进程异常退出。\n" +
       "常见原因：Python 路径失效、native-host.py 被移动、或启动器损坏。\n" +
-      "请重新运行 setup-native-host.ps1，并查看 %LOCALAPPDATA%\\YT-DLP-Edge\\bridge.log\n" +
+      "请重新运行 setup-native-host.bat，并查看 %LOCALAPPDATA%\\YT-DLP-Edge\\bridge.log\n" +
       `原始错误: ${message}`
     );
   }
-  return `${message}\n若刚换电脑或移动了扩展目录，请重新运行 setup-native-host.ps1。`;
+  return `${message}\n若刚换电脑或移动了扩展目录，请重新运行 setup-native-host.bat。`;
 }
 
 async function persistTasks() {
@@ -191,7 +191,7 @@ async function waitForBridge(timeoutMs = 2500) {
       if (!bridgeError) {
         bridgeError = (
           `本机桥接器未在 ${timeoutMs / 1000} 秒内响应。\n` +
-          "请确认已运行 setup-native-host.ps1，Python 可用，并查看 bridge.log。"
+          "请确认已运行 setup-native-host.bat，Python 可用，并查看 bridge.log。"
         );
       }
       resolve(false);
@@ -224,7 +224,7 @@ function bridgeStatusPayload(connected) {
     ytDlp: bridgeYtDlp,
     diagnosis: bridgeDiagnosis,
     extensionId: chrome.runtime.id,
-    setupCommand: `.\\setup-native-host.ps1 -ExtensionId "${chrome.runtime.id}"`
+    setupCommand: `setup-native-host.bat ${chrome.runtime.id}`
   };
 }
 
@@ -310,7 +310,7 @@ async function requestInstallTools(ytdlpOnly = false) {
   if (!connected || !nativePort) {
     return {
       ok: false,
-      message: bridgeError || "无法连接本机桥接器，请先运行 setup-native-host.ps1",
+      message: bridgeError || "无法连接本机桥接器，请先运行 setup-native-host.bat",
       ...bridgeStatusPayload(false)
     };
   }
@@ -406,7 +406,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({
         ok: true,
         extensionId: chrome.runtime.id,
-        setupCommand: `.\\setup-native-host.ps1 -ExtensionId "${chrome.runtime.id}"`
+        setupCommand: `setup-native-host.bat ${chrome.runtime.id}`
       });
       return;
     }

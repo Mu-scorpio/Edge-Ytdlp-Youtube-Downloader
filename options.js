@@ -28,7 +28,7 @@ async function restoreSettings() {
 
 async function loadSetupInfo() {
   const info = await chrome.runtime.sendMessage({ type: "get-setup-info" });
-  const command = info?.setupCommand || `.\\setup-native-host.ps1 -ExtensionId "${chrome.runtime.id}"`;
+  const command = info?.setupCommand || `setup-native-host.bat ${chrome.runtime.id}`;
   setupCommand.textContent = command;
 }
 

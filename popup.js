@@ -34,7 +34,7 @@ function renderDeps(result) {
     setupHint.hidden = false;
     setupHint.textContent = result?.setupCommand
       ? `新设备请在扩展目录运行：${result.setupCommand}`
-      : "请先运行 setup-native-host.ps1 注册本机桥接器。";
+      : "请先运行 setup-native-host.bat 注册本机桥接器。";
     installButton.disabled = true;
     return;
   }

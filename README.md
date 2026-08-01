@@ -88,7 +88,7 @@ Python / yt-dlp / Node / FFmpeg 状态一目了然；缺什么就装什么。
 - 下载目录默认跟随 Edge 设置  
 
 ### 新设备友好（v1.4）
-- `setup-native-host.ps1` 尽量自动安装 Python / yt-dlp / Node / FFmpeg  
+- 双击运行 `setup-native-host.bat`（或命令行传扩展 ID），尽量自动安装 Python / yt-dlp / Node / FFmpeg  
 - 弹窗一键「安装缺失工具」  
 - 找不到 `yt-dlp.exe` 时回退 `python -m yt_dlp`  
 - 错误信息改成**能照着修**的中文说明  
@@ -107,7 +107,7 @@ Python / yt-dlp / Node / FFmpeg 状态一目了然；缺什么就装什么。
 从 [Releases](https://github.com/Mu-scorpio/edge-ytdlp-youtube-downloader/releases/latest) 下载：
 
 ```text
-edge-ytdlp-youtube-downloader-v1.4.0.zip
+edge-ytdlp-youtube-downloader.zip
 ```
 
 解压到**不会随便移动或删除**的目录（路径会写进本机桥接配置）。
@@ -121,12 +121,13 @@ edge-ytdlp-youtube-downloader-v1.4.0.zip
 
 ### 3. 一键注册本机桥接（并尽量装好工具）
 
-在扩展目录打开 PowerShell：
+在扩展目录打开 **命令提示符** 或终端：
 
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\setup-native-host.ps1 -ExtensionId "你的32位扩展ID"
+```bat
+setup-native-host.bat 你的32位扩展ID
 ```
+
+也可以在资源管理器地址栏输入 `cmd` 回车后执行上述命令。
 
 脚本会：
 - 检查 / 尝试安装 Python 3.9+  
@@ -139,7 +140,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 2. **刷新**已打开的 YouTube 标签页  
 3. 点扩展图标，确认显示「本机下载器已连接」
 
-> 只想注册桥接、不自动装工具？加 `-SkipToolInstall`。
+> 只想注册桥接、不自动装工具？加 `--skip-tools`：  
+> `setup-native-host.bat 你的扩展ID --skip-tools`
 
 ### 4. 开始下载
 
@@ -218,7 +220,7 @@ Edge 下载目录（或你指定的路径）
 
 | 现象 | 先试这个 |
 | --- | --- |
-| 本机桥接器未连接 | 用**当前**扩展 ID 重跑 `setup-native-host.ps1`，再重载扩展 |
+| 本机桥接器未连接 | 用**当前**扩展 ID 重跑 `setup-native-host.bat`，再重载扩展 |
 | 扩展已更新后按钮失效 | 刷新 YouTube 页面（旧 content script 会失效） |
 | Sign in to confirm you're not a bot | 确认 Edge 已登录 YouTube、Cookie 开关开启、代理与浏览器同出口 |
 | Requested format is not available | 升级 `yt-dlp[default]`，确认 Node 已装 |
@@ -247,11 +249,11 @@ python -c "from pathlib import Path; p=Path('native-host.py'); compile(p.read_te
 
 打干净 Release 包（白名单打包，不含本机路径 / Cookie / `__pycache__`）：
 
-```powershell
-.\build-release.ps1
+```bat
+build-release.bat
 ```
 
-输出：`dist\edge-ytdlp-youtube-downloader-vX.Y.Z.zip`
+输出：`dist\edge-ytdlp-youtube-downloader.zip`（文件名不含版本号）
 
 截图资源位于 `docs/screenshots/`，可用 `docs/mockups/` 里的 HTML 用无头浏览器重新导出。
 
@@ -294,5 +296,5 @@ python -c "from pathlib import Path; p=Path('native-host.py'); compile(p.read_te
 
 <p align="center">
   <sub>Made for people who just want a download button that actually works.</sub><br>
-  <a href="https://github.com/Mu-scorpio/edge-ytdlp-youtube-downloader/releases/latest">获取 v1.4.0</a>
+  <a href="https://github.com/Mu-scorpio/edge-ytdlp-youtube-downloader/releases/latest">获取最新版</a>
 </p>
