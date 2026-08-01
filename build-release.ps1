@@ -24,6 +24,7 @@ $sourceFiles = @(
     'manifest.json',
     'background.js',
     'content.js',
+    'page-bridge.js',
     'content.css',
     'popup.html',
     'popup.js',
@@ -33,6 +34,10 @@ $sourceFiles = @(
     'options.css',
     'native-host.py',
     'setup-native-host.ps1',
+    'icons/icon16.png',
+    'icons/icon32.png',
+    'icons/icon48.png',
+    'icons/icon128.png',
     'README.md',
     'CHANGELOG.md',
     'LICENSE'
@@ -58,7 +63,12 @@ foreach ($relativePath in $sourceFiles) {
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
         throw "Release file is missing: $relativePath"
     }
-    Copy-Item -LiteralPath $source -Destination (Join-Path $staging $relativePath)
+    $destination = Join-Path $staging $relativePath
+    $destinationDir = Split-Path -Parent $destination
+    if (-not (Test-Path -LiteralPath $destinationDir)) {
+        New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+    }
+    Copy-Item -LiteralPath $source -Destination $destination
 }
 
 Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $archive -CompressionLevel Optimal

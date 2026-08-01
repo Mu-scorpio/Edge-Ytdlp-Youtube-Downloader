@@ -9,15 +9,44 @@
 <body>
   <main>
     <header>
-      <div><h1>YT-DLP 下载器</h1><p id="status" class="status" role="status">正在连接本机下载器…</p></div>
+      <div>
+        <h1>YT-DLP 下载器</h1>
+        <p id="status" class="status" role="status">正在连接本机下载器…</p>
+      </div>
       <button id="open-options" class="icon-button" type="button" aria-label="下载设置" title="下载设置">设置</button>
     </header>
+
+    <section class="deps" aria-labelledby="deps-title">
+      <div class="section-heading">
+        <h2 id="deps-title">本机依赖</h2>
+        <span>
+          <button id="refresh-deps" class="text-button" type="button">刷新</button>
+          <button id="install-tools" class="text-button primary-text" type="button">安装缺失工具</button>
+        </span>
+      </div>
+      <ul id="deps-list" class="deps-list">
+        <li class="deps-item muted">正在检测…</li>
+      </ul>
+      <p id="setup-hint" class="setup-hint" hidden></p>
+      <p id="install-message" class="install-message" role="status"></p>
+    </section>
+
     <section class="downloads" aria-labelledby="downloads-title">
-      <div class="section-heading"><h2 id="downloads-title">下载状态</h2><button id="clear-finished" class="text-button" type="button">清除已结束</button></div>
+      <div class="section-heading">
+        <h2 id="downloads-title">下载状态</h2>
+        <button id="clear-finished" class="text-button" type="button">清除已结束</button>
+      </div>
       <div id="task-list" class="task-list"><p class="empty">暂无下载任务</p></div>
     </section>
+
     <section class="debug" aria-labelledby="debug-title">
-      <div class="section-heading"><h2 id="debug-title">诊断日志</h2><span><button id="copy-debug" class="text-button" type="button">复制</button><button id="clear-debug" class="text-button" type="button">清除</button></span></div>
+      <div class="section-heading">
+        <h2 id="debug-title">诊断日志</h2>
+        <span>
+          <button id="copy-debug" class="text-button" type="button">复制</button>
+          <button id="clear-debug" class="text-button" type="button">清除</button>
+        </span>
+      </div>
       <pre id="debug-log">正在读取日志…</pre>
     </section>
   </main>

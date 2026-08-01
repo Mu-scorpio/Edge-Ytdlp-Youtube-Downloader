@@ -1,12 +1,38 @@
 const BUTTON_CLASS = "ytdlp-download-button";
 const SURFACE_ATTRIBUTE = "data-ytdlp-surface";
+const SUBTITLE_BRIDGE_SOURCE = "yt-dlp-edge-subtitle-bridge-v1";
 let toastElement;
 let toastHideTimer;
 let toastResetTimer;
 const taskPollers = new Map();
+const subtitleResolvers = new Map();
+let subtitleBridgePromise;
+let extensionContextAlive = true;
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window || event.data?.source !== SUBTITLE_BRIDGE_SOURCE
+      || event.data.type !== "active-subtitle-response") return;
+  const resolver = subtitleResolvers.get(event.data.requestId);
+  if (!resolver) return;
+  subtitleResolvers.delete(event.data.requestId);
+  resolver(event.data.track || null);
+});
 
 function diagnostic(event, detail = {}) {
-  chrome.runtime.sendMessage({ type: "debug-log", source: "content", event, detail }).catch(() => {});
+  safeRuntimeMessage({ type: "debug-log", source: "content", event, detail });
+}
+
+function safeRuntimeMessage(message) {
+  if (!extensionContextAlive) return Promise.resolve(null);
+  try {
+    return chrome.runtime.sendMessage(message).catch((error) => {
+      if (/Extension context invalidated/i.test(error?.message || String(error))) extensionContextAlive = false;
+      return null;
+    });
+  } catch (error) {
+    if (/Extension context invalidated/i.test(error?.message || String(error))) extensionContextAlive = false;
+    return Promise.resolve(null);
+  }
 }
 
 function parseVideoUrl(href) {
@@ -40,14 +66,71 @@ function videoInfoFromContainer(container) {
   };
 }
 
-function videoInfoFromWatchPage() {
+async function videoInfoFromWatchPage() {
   const url = parseVideoUrl(location.href);
   if (!url) return null;
   const titleElement = document.querySelector("ytd-watch-metadata h1 yt-formatted-string, ytd-watch-metadata h1, #title h1 yt-formatted-string");
   return {
     url: url.href,
-    title: titleElement?.textContent.trim() || document.title.replace(/\s*-\s*YouTube\s*$/, "") || "YouTube video"
+    title: titleElement?.textContent.trim() || document.title.replace(/\s*-\s*YouTube\s*$/, "") || "YouTube video",
+    subtitleTrack: await activeSubtitleTrack()
   };
+}
+
+function subtitleTrackFromPlayer(player) {
+  if (!player || typeof player.getOption !== "function") return null;
+  try {
+    const track = player.getOption("captions", "track");
+    const languageCode = typeof track?.languageCode === "string" ? track.languageCode.trim() : "";
+    if (!languageCode) return null;
+    return {
+      languageCode,
+      kind: track.kind === "asr" ? "asr" : "manual",
+      languageName: typeof track.languageName === "string" ? track.languageName.trim() : ""
+    };
+  } catch {
+    return null;
+  }
+}
+
+function ensureSubtitleBridge() {
+  if (subtitleBridgePromise) return subtitleBridgePromise;
+  subtitleBridgePromise = new Promise((resolve) => {
+    let resourceUrl;
+    try {
+      resourceUrl = chrome.runtime.getURL("page-bridge.js");
+    } catch (error) {
+      if (/Extension context invalidated/i.test(error?.message || String(error))) extensionContextAlive = false;
+      resolve(false);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = resourceUrl;
+    script.onload = () => { script.remove(); resolve(true); };
+    script.onerror = () => { script.remove(); resolve(false); };
+    (document.head || document.documentElement).append(script);
+  });
+  return subtitleBridgePromise;
+}
+
+async function activeSubtitleTrack() {
+  const player = document.getElementById("movie_player");
+  const directTrack = subtitleTrackFromPlayer(player);
+  if (directTrack) return directTrack;
+  if (!await ensureSubtitleBridge()) return null;
+
+  const requestId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      subtitleResolvers.delete(requestId);
+      resolve(null);
+    }, 1000);
+    subtitleResolvers.set(requestId, (track) => {
+      window.clearTimeout(timeout);
+      resolve(track);
+    });
+    window.postMessage({ source: SUBTITLE_BRIDGE_SOURCE, type: "get-active-subtitle", requestId }, "*");
+  });
 }
 
 function setButtonState(button, state, label) {
@@ -59,7 +142,16 @@ function setButtonState(button, state, label) {
 function readableError(error) {
   const message = error?.message || String(error || "未知错误");
   if (/Extension context invalidated/i.test(message)) {
-    return "扩展已更新，请刷新此 YouTube 页面后重试";
+    return "扩展已更新或重新加载，请刷新此 YouTube 页面后重试";
+  }
+  if (/Specified native messaging host not found|host not found/i.test(message)) {
+    return "未注册本机桥接器。请在扩展目录运行 setup-native-host.ps1（会自动安装缺失下载工具），然后重新加载扩展";
+  }
+  if (/Access to the specified native messaging host is forbidden/i.test(message)) {
+    return "桥接器扩展 ID 不匹配。请用当前扩展 ID 重新运行 setup-native-host.ps1";
+  }
+  if (/Could not establish connection|Receiving end does not exist/i.test(message)) {
+    return "无法联系扩展后台。请在 edge://extensions 确认扩展已启用，并刷新本页";
   }
   return message;
 }
@@ -85,12 +177,16 @@ function showToast(task) {
   const title = document.createElement("span");
   title.textContent = task.title || "YouTube video";
   const detail = document.createElement("small");
-  detail.textContent = task.error || task.filePath || task.outputDirectory || "";
+  detail.textContent = task.error
+    || (task.subtitleError ? `字幕下载未完成：${task.subtitleError}` : "")
+    || task.outputDirectory
+    || "";
   toastElement.append(heading, title, detail);
   toastElement.dataset.state = task.status;
   if (["completed", "error"].includes(task.status)) {
-    toastHideTimer = window.setTimeout(() => toastElement?.remove(), 5000);
-    toastResetTimer = window.setTimeout(() => { toastElement = undefined; }, 5100);
+    const hideMs = task.status === "error" ? 12000 : 5000;
+    toastHideTimer = window.setTimeout(() => toastElement?.remove(), hideMs);
+    toastResetTimer = window.setTimeout(() => { toastElement = undefined; }, hideMs + 100);
   }
 }
 
@@ -106,7 +202,7 @@ function applyTaskToButton(button, task) {
     connecting: "正在连接本机下载器…",
     queued: "已加入下载队列",
     downloading: `正在下载：${percent}%`,
-    completed: `下载完成：${task.filePath || task.outputDirectory || ""}`,
+    completed: `下载完成：${task.outputDirectory || ""}`,
     error: `下载失败：${task.error || "未知错误"}`
   }[task.status];
   setButtonState(button, task.status, label || "使用 yt-dlp 下载");
@@ -123,13 +219,18 @@ function watchTask(button, id) {
   const existing = taskPollers.get(id);
   if (existing) window.clearInterval(existing);
   const refreshTask = async () => {
+    if (!extensionContextAlive) {
+      window.clearInterval(taskPollers.get(id));
+      taskPollers.delete(id);
+      return;
+    }
     if (!button.isConnected) {
       window.clearInterval(taskPollers.get(id));
       taskPollers.delete(id);
       return;
     }
     try {
-      const result = await chrome.runtime.sendMessage({ type: "get-downloads" });
+      const result = await safeRuntimeMessage({ type: "get-downloads" });
       const task = result?.tasks?.find((candidate) => candidate.id === id);
       if (task) {
         applyTaskToButton(button, task);
@@ -166,24 +267,27 @@ function createDownloadButton(getVideoInfo, surface) {
   button.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    const video = getVideoInfo();
-    if (!video) return;
-
-    diagnostic("download-button-clicked", {
-      surface,
-      videoId: new URL(video.url).searchParams.get("v")
-    });
-
-    setButtonState(button, "pending", "正在加入 yt-dlp 下载队列…");
+    let video;
     try {
-      const result = await chrome.runtime.sendMessage({ type: "download", ...video });
+      video = await getVideoInfo();
+      if (!video) return;
+
+      diagnostic("download-button-clicked", {
+        surface,
+        videoId: new URL(video.url).searchParams.get("v"),
+        subtitleTrack: video.subtitleTrack || null
+      });
+
+      setButtonState(button, "pending", "正在加入 yt-dlp 下载队列…");
+      const result = await safeRuntimeMessage({ type: "download", ...video });
+      if (!result) throw new Error("扩展已更新，请刷新此 YouTube 页面后重试");
       if (!result?.ok) throw new Error(result?.error || "无法加入下载队列");
       diagnostic("download-message-response", { ok: true, surface, taskId: result.task.id });
       button.dataset.taskId = result.task.id;
       applyTaskToButton(button, result.task);
       showToast(result.task);
       watchTask(button, result.task.id);
-      const latest = await chrome.runtime.sendMessage({ type: "get-downloads" });
+      const latest = await safeRuntimeMessage({ type: "get-downloads" });
       const latestTask = latest?.tasks?.find((task) => task.id === result.task.id);
       if (latestTask) applyTaskToButton(button, latestTask);
     } catch (error) {
@@ -191,7 +295,7 @@ function createDownloadButton(getVideoInfo, surface) {
       diagnostic("download-message-error", { error: message, surface });
       button.disabled = false;
       setButtonState(button, "error", `下载失败：${message}`);
-      showToast({ status: "error", title: video.title, error: message });
+      showToast({ status: "error", title: video?.title, error: message });
     }
   });
 
@@ -238,7 +342,7 @@ function addPlaylistButtons(root) {
 }
 
 function addWatchButton() {
-  if (location.pathname !== "/watch" || !videoInfoFromWatchPage()) return;
+  if (location.pathname !== "/watch" || !parseVideoUrl(location.href)) return;
   const menu = document.querySelector("ytd-watch-metadata ytd-menu-renderer");
   if (!menu || menu.querySelector(`.${BUTTON_CLASS}[${SURFACE_ATTRIBUTE}="watch"]`)) return;
 

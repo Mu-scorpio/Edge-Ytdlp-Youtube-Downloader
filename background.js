@@ -7,7 +7,11 @@ const MAX_DEBUG_ENTRIES = 120;
 let nativePort = null;
 let bridgeError = "";
 let bridgeReady = false;
+let bridgeVersion = "";
+let bridgeDiagnosis = null;
+let bridgeYtDlp = "";
 let bridgeWaiters = [];
+const pendingInstall = new Map();
 let debugQueue = Promise.resolve();
 const tasks = new Map();
 const taskStoreReady = chrome.storage.local.get({ downloadTasks: [] }).then(({ downloadTasks }) => {
@@ -36,6 +40,46 @@ debug("service-worker-started", { extensionId: chrome.runtime.id });
 
 function taskId() {
   return crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function explainBridgeDisconnect(raw) {
+  const message = String(raw || "").trim();
+  const lower = message.toLowerCase();
+  if (!message) {
+    return (
+      "本机桥接器已断开。\n" +
+      "请在扩展目录运行: .\\setup-native-host.ps1 -ExtensionId \"" + chrome.runtime.id + "\"\n" +
+      "然后在 edge://extensions 重新加载扩展。"
+    );
+  }
+  if (/Specified native messaging host not found|host not found/i.test(message) || lower.includes("not found")) {
+    return (
+      "未找到本机桥接器（Native Messaging Host）。\n" +
+      "新设备需要先注册桥接：\n" +
+      "1. 在扩展目录打开 PowerShell\n" +
+      "2. 运行 .\\setup-native-host.ps1 -ExtensionId \"" + chrome.runtime.id + "\"\n" +
+      "3. 脚本会自动安装缺失的 yt-dlp / Node / FFmpeg（若可用 winget）\n" +
+      "4. 在 edge://extensions 重新加载扩展并刷新 YouTube 页面\n" +
+      `原始错误: ${message}`
+    );
+  }
+  if (/Access to the specified native messaging host is forbidden|forbidden/i.test(message)) {
+    return (
+      "本机桥接器拒绝连接（扩展 ID 不匹配）。\n" +
+      "请用当前扩展 ID 重新注册：\n" +
+      ".\\setup-native-host.ps1 -ExtensionId \"" + chrome.runtime.id + "\"\n" +
+      `原始错误: ${message}`
+    );
+  }
+  if (/Native host has exited|host.*exited|Broken pipe/i.test(message)) {
+    return (
+      "本机桥接进程异常退出。\n" +
+      "常见原因：Python 路径失效、native-host.py 被移动、或启动器损坏。\n" +
+      "请重新运行 setup-native-host.ps1，并查看 %LOCALAPPDATA%\\YT-DLP-Edge\\bridge.log\n" +
+      `原始错误: ${message}`
+    );
+  }
+  return `${message}\n若刚换电脑或移动了扩展目录，请重新运行 setup-native-host.ps1。`;
 }
 
 async function persistTasks() {
@@ -75,7 +119,27 @@ function handleNativeMessage(message) {
   if (message?.event === "pong") {
     bridgeError = "";
     bridgeReady = true;
+    bridgeVersion = message.bridgeVersion || "";
+    bridgeYtDlp = message.ytDlp || "";
+    bridgeDiagnosis = message.diagnosis || null;
     settleBridgeWaiters(true);
+  }
+  if (message?.event === "diagnosis") {
+    bridgeDiagnosis = message.diagnosis || null;
+  }
+  if (message?.event === "install-result") {
+    const requestId = message.requestId;
+    if (requestId && pendingInstall.has(requestId)) {
+      const settle = pendingInstall.get(requestId);
+      pendingInstall.delete(requestId);
+      settle(message);
+    }
+    if (message.diagnosis) bridgeDiagnosis = message.diagnosis;
+    chrome.runtime.sendMessage({ type: "install-update", result: message }).catch(() => {});
+  }
+  if (message?.event === "bridge-error") {
+    bridgeError = message.error || "本机桥接器内部错误";
+    debug("native-bridge-error", { error: bridgeError });
   }
 }
 
@@ -91,10 +155,16 @@ function ensureNativePort() {
     debug("native-port-created");
     nativePort.onMessage.addListener(handleNativeMessage);
     nativePort.onDisconnect.addListener(() => {
-      bridgeError = chrome.runtime.lastError?.message || "本机桥接器已断开";
-      debug("native-disconnected", { error: bridgeError });
+      const raw = chrome.runtime.lastError?.message || "";
+      bridgeError = explainBridgeDisconnect(raw);
+      debug("native-disconnected", { error: bridgeError, raw });
       bridgeReady = false;
+      bridgeVersion = "";
       settleBridgeWaiters(false);
+      for (const [id, settle] of pendingInstall) {
+        settle({ ok: false, message: bridgeError, requestId: id });
+      }
+      pendingInstall.clear();
       nativePort = null;
       failActiveTasks(bridgeError);
     });
@@ -103,23 +173,29 @@ function ensureNativePort() {
     bridgeError = "";
     return nativePort;
   } catch (error) {
-    bridgeError = error.message || "无法连接本机桥接器";
+    bridgeError = explainBridgeDisconnect(error.message || "无法连接本机桥接器");
     debug("native-connect-threw", { error: bridgeError });
     nativePort = null;
     return null;
   }
 }
 
-async function waitForBridge() {
+async function waitForBridge(timeoutMs = 2500) {
   if (bridgeReady) return true;
   if (!ensureNativePort()) return false;
   if (bridgeReady) return true;
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       bridgeWaiters = bridgeWaiters.filter((waiter) => waiter !== finish);
-      debug("native-ping-timeout", { timeoutMs: 1600, bridgeError });
+      debug("native-ping-timeout", { timeoutMs, bridgeError });
+      if (!bridgeError) {
+        bridgeError = (
+          `本机桥接器未在 ${timeoutMs / 1000} 秒内响应。\n` +
+          "请确认已运行 setup-native-host.ps1，Python 可用，并查看 bridge.log。"
+        );
+      }
       resolve(false);
-    }, 1600);
+    }, timeoutMs);
     const finish = (connected) => {
       clearTimeout(timeout);
       resolve(connected);
@@ -140,11 +216,29 @@ async function readYouTubeCookies() {
   }
 }
 
+function bridgeStatusPayload(connected) {
+  return {
+    ok: connected,
+    bridgeError: bridgeError || (connected ? "" : "本机桥接器未响应"),
+    bridgeVersion,
+    ytDlp: bridgeYtDlp,
+    diagnosis: bridgeDiagnosis,
+    extensionId: chrome.runtime.id,
+    setupCommand: `.\\setup-native-host.ps1 -ExtensionId "${chrome.runtime.id}"`
+  };
+}
+
 async function startDownload(message) {
   await taskStoreReady;
   const settings = await chrome.storage.local.get(DEFAULTS);
   const browserCookies = settings.autoUseBrowserCookies ? await readYouTubeCookies() : [];
-  debug("download-request", { proxyConfigured: Boolean(settings.proxyUrl), autoBrowserCookies: settings.autoUseBrowserCookies, browserCookieCount: browserCookies.length, cookiesFileConfigured: Boolean(settings.cookiesFilePath) });
+  debug("download-request", {
+    proxyConfigured: Boolean(settings.proxyUrl),
+    autoBrowserCookies: settings.autoUseBrowserCookies,
+    browserCookieCount: browserCookies.length,
+    cookiesFileConfigured: Boolean(settings.cookiesFilePath),
+    subtitleTrack: message.subtitleTrack || null
+  });
   const task = {
     id: taskId(),
     title: message.title || "YouTube video",
@@ -162,7 +256,7 @@ async function startDownload(message) {
   const port = nativePort;
   if (!connected || !port) {
     task.status = "error";
-    task.error = bridgeError || "本机桥接器未在 1.6 秒内响应";
+    task.error = bridgeError || "本机桥接器未响应";
     await publishTask(task);
     debug("download-bridge-unavailable", { taskId: task.id, error: task.error });
     return { ok: false, error: task.error };
@@ -176,6 +270,7 @@ async function startDownload(message) {
       taskId: task.id,
       title: task.title,
       url: task.url,
+      subtitleTrack: message.subtitleTrack || null,
       ytDlpPath: settings.ytDlpPath.trim(),
       outputDirectory: settings.outputDirectory.trim(),
       proxyUrl: normalizeProxyUrl(settings.proxyUrl),
@@ -192,6 +287,59 @@ async function startDownload(message) {
     debug("download-post-failed", { taskId: task.id, error: task.error });
     return { ok: false, error: task.error };
   }
+}
+
+async function requestDiagnosis() {
+  const connected = await waitForBridge();
+  if (!connected || !nativePort) {
+    return { ok: false, ...bridgeStatusPayload(false) };
+  }
+  const settings = await chrome.storage.local.get(DEFAULTS);
+  nativePort.postMessage({ action: "diagnose", ytDlpPath: settings.ytDlpPath.trim() });
+  // Wait briefly for diagnosis event; fall back to last pong diagnosis.
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  return {
+    ok: true,
+    ...bridgeStatusPayload(true),
+    diagnosis: bridgeDiagnosis
+  };
+}
+
+async function requestInstallTools(ytdlpOnly = false) {
+  const connected = await waitForBridge(4000);
+  if (!connected || !nativePort) {
+    return {
+      ok: false,
+      message: bridgeError || "无法连接本机桥接器，请先运行 setup-native-host.ps1",
+      ...bridgeStatusPayload(false)
+    };
+  }
+  const requestId = taskId();
+  const resultPromise = new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingInstall.delete(requestId);
+      resolve({
+        ok: false,
+        message: "安装超时（超过 15 分钟）。请查看 bridge.log 或在 PowerShell 中手动安装依赖。",
+        requestId
+      });
+    }, 15 * 60 * 1000);
+    pendingInstall.set(requestId, (payload) => {
+      clearTimeout(timer);
+      resolve(payload);
+    });
+  });
+  nativePort.postMessage({ action: "install-tools", requestId, ytdlpOnly: Boolean(ytdlpOnly) });
+  debug("install-tools-sent", { requestId, ytdlpOnly });
+  const result = await resultPromise;
+  if (result.diagnosis) bridgeDiagnosis = result.diagnosis;
+  return {
+    ok: Boolean(result.ok),
+    message: result.message || (result.ok ? "安装完成" : "安装失败"),
+    steps: result.steps || [],
+    diagnosis: result.diagnosis || bridgeDiagnosis,
+    ...bridgeStatusPayload(bridgeReady)
+  };
 }
 
 function normalizeProxyUrl(value) {
@@ -232,12 +380,34 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "get-downloads") {
       await taskStoreReady;
       const connected = await waitForBridge();
-      sendResponse({ ok: connected, tasks: [...tasks.values()].sort((a, b) => b.updatedAt - a.updatedAt), bridgeError: bridgeError || (connected ? "" : "本机桥接器未响应") });
+      sendResponse({
+        ...bridgeStatusPayload(connected),
+        tasks: [...tasks.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+      });
       return;
     }
     if (message.type === "ping") {
       const connected = await waitForBridge();
-      sendResponse({ ok: connected, error: bridgeError || (connected ? "" : "本机桥接器未响应") });
+      sendResponse({
+        ...bridgeStatusPayload(connected),
+        error: bridgeError || (connected ? "" : "本机桥接器未响应")
+      });
+      return;
+    }
+    if (message.type === "diagnose") {
+      sendResponse(await requestDiagnosis());
+      return;
+    }
+    if (message.type === "install-tools") {
+      sendResponse(await requestInstallTools(message.ytdlpOnly));
+      return;
+    }
+    if (message.type === "get-setup-info") {
+      sendResponse({
+        ok: true,
+        extensionId: chrome.runtime.id,
+        setupCommand: `.\\setup-native-host.ps1 -ExtensionId "${chrome.runtime.id}"`
+      });
       return;
     }
     if (message.type === "clear-downloads") {

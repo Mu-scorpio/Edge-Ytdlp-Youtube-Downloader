@@ -10,20 +10,24 @@
 - 播放列表页：每条视频的三点菜单旁显示下载按钮，下载的是该条视频，不会一次下载整个列表。
 - 视频播放页：在“保存”和三点菜单之间显示下载按钮。
 - 自动读取当前 Edge 的 YouTube 登录 Cookie，应对登录验证和机器人检测。
-- 显示连接、排队、下载进度、完成路径和错误信息。
+- 显示连接、排队、下载进度、完成路径和可操作的详细错误信息。
+- 新设备自动检测/安装下载依赖（`setup-native-host.ps1` 与弹窗「安装缺失工具」）。
+- 缺少 yt-dlp 时，首次下载会尝试自动 `pip install "yt-dlp[default]"`。
 - 每次点击创建独立的 `yt-dlp` 进程，支持并行下载。
 - 下载目录留空时，自动使用 Edge 当前配置的下载目录。
 - 支持自定义 `yt-dlp.exe`、下载目录、代理地址和备用 `cookies.txt`。
 - 默认兼容本机 `127.0.0.1:7890` 代理。
+- 在视频播放页下载时读取 YouTube 播放器当前使用的字幕轨道，只尝试下载该轨道；字幕请求失败不会使视频下载失败。字幕会与视频保存到同一目录。
+- 页面字幕状态通过页面上下文桥接读取，避免内容脚本隔离环境拿不到播放器 API。
 
 ## 系统要求
 
 - Windows 10/11
 - Microsoft Edge
-- Python 3.9+
-- 最新版 `yt-dlp`，并安装默认依赖和 EJS 组件
-- Node.js 22+
-- FFmpeg（下载高画质视频时用于合并音视频）
+- Python 3.9+（安装脚本可尝试用 winget 自动安装）
+- 最新版 `yt-dlp[default]`（含 EJS；安装脚本与扩展均可自动安装）
+- Node.js（解析 YouTube JS 挑战；可自动安装）
+- FFmpeg（高画质音视频合并；可自动安装，可选但推荐）
 
 建议先检查：
 
@@ -44,7 +48,7 @@ py -m pip install --user --upgrade "yt-dlp[default]"
 
 ### 1. 下载并解压
 
-从 Releases 下载 `edge-ytdlp-youtube-downloader-v1.1.0.zip`，解压到一个不会移动或删除的永久目录。
+从 Releases 下载 `edge-ytdlp-youtube-downloader-v1.4.0.zip`，解压到一个不会移动或删除的永久目录。
 
 不要直接从压缩包运行，也不要在完成 Native Host 注册后移动目录。
 
@@ -54,9 +58,9 @@ py -m pip install --user --upgrade "yt-dlp[default]"
 2. 开启“开发人员模式”。
 3. 点击“加载解压缩的扩展”。
 4. 选择包含 `manifest.json` 的目录。
-5. 复制扩展卡片上的 32 位扩展 ID。
+5. 复制扩展卡片上的 32 位扩展 ID（也可在扩展弹窗/设置页直接复制安装命令）。
 
-### 3. 注册 Native Messaging Host
+### 3. 注册 Native Messaging Host（新设备一键）
 
 在插件目录打开 PowerShell，执行：
 
@@ -73,17 +77,33 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 脚本会：
 
+- 检测 Python 3.9+；缺失时尝试 `winget` 安装。
+- 自动 `pip install --user --upgrade "yt-dlp[default]"`。
+- 缺失时尝试 `winget` 安装 Node.js LTS 与 FFmpeg。
 - 生成与当前电脑路径绑定的 `native-host.cmd`。
 - 生成与扩展 ID 绑定的 `com.local.ytdlp_downloader.json`。
 - 写入注册表 `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.local.ytdlp_downloader`。
+- 打印依赖状态摘要与后续操作说明。
+
+仅注册桥接、跳过工具安装：
+
+```powershell
+.\setup-native-host.ps1 -ExtensionId "你的32位扩展ID" -SkipToolInstall
+```
 
 完成后在 `edge://extensions` 重新加载扩展，并刷新已经打开的 YouTube 页面。
 
-### 4. 配置
+### 4. 配置与依赖修复
 
-点击扩展图标进入设置：
+点击扩展图标：
 
-- `yt-dlp` 路径：通常留空；如果不在 `PATH` 中，填写 `yt-dlp.exe` 完整路径。
+- 查看本机依赖（Python / yt-dlp / Node / FFmpeg）状态。
+- 点击「安装缺失工具」由桥接器自动补齐（yt-dlp 走 pip，Node/FFmpeg 走 winget）。
+- 设置页可复制当前扩展 ID 对应的安装命令。
+
+设置项：
+
+- `yt-dlp` 路径：通常留空；会依次尝试 `PATH` 中的 `yt-dlp` 与 `python -m yt_dlp`。
 - 下载目录：留空时使用 Edge 的下载目录。
 - 代理地址：默认 `socks5h://127.0.0.1:7890`；不需要代理时清空。
 - 自动使用 Edge Cookie：建议保持开启。
@@ -320,7 +340,7 @@ python -c "from pathlib import Path; p=Path('native-host.py'); compile(p.read_te
 输出：
 
 ```text
-dist\edge-ytdlp-youtube-downloader-v1.1.0.zip
+dist\edge-ytdlp-youtube-downloader-v1.4.0.zip
 ```
 
 打包脚本使用文件白名单，不会把本机生成的 Native Host 路径、扩展 ID、测试缓存或 Git 元数据放进压缩包。

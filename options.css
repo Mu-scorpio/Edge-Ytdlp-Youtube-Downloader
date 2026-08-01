@@ -10,11 +10,19 @@ input:focus { border-color: #065fd4; outline: 2px solid color-mix(in srgb, #065f
 .checkbox-label { align-items: center; display: flex; font-weight: 400; gap: 8px; }
 .checkbox-label input { accent-color: #065fd4; margin: 0; width: auto; }
 .hint { font-size: 12px; margin: -7px 0 12px; }
-.actions { display: flex; gap: 10px; margin-top: 24px; }
+.ok-text { color: #08783f; }
+.warn-text { color: #9a6700; }
+.error-text { color: #b3261e; }
+.setup-box { background: color-mix(in srgb, CanvasText 5%, Canvas); border: 1px solid color-mix(in srgb, CanvasText 14%, Canvas); border-radius: 10px; margin: 22px 0 8px; padding: 16px 18px; }
+.setup-box h2 { font-size: 16px; margin: 0 0 8px; }
+.setup-box .hint { margin: 0 0 10px; }
+.setup-command { background: color-mix(in srgb, CanvasText 8%, Canvas); border-radius: 6px; font: 12px/1.45 Consolas, monospace; margin: 0 0 12px; overflow-x: auto; padding: 10px 12px; white-space: pre-wrap; word-break: break-all; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.setup-box .actions { margin-top: 0; }
 button { background: #065fd4; border: 1px solid #065fd4; border-radius: 6px; color: white; cursor: pointer; font: inherit; font-weight: 600; padding: 9px 14px; }
 button:hover, button:focus-visible { background: #0356bd; outline: none; }
 .secondary { background: transparent; border-color: color-mix(in srgb, CanvasText 34%, Canvas); color: CanvasText; }
 .secondary:hover, .secondary:focus-visible { background: color-mix(in srgb, CanvasText 8%, Canvas); }
-#message { min-height: 1.55em; }
+#message { min-height: 1.55em; white-space: pre-wrap; }
 #message.ok { color: #08783f; }
 #message.error { color: #b3261e; }

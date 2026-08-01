@@ -9,7 +9,20 @@
 <body>
   <main>
     <h1>YT-DLP 下载设置</h1>
-    <p>留空 yt-dlp 路径会直接调用已加入系统 PATH 的 <code>yt-dlp.exe</code>。</p>
+    <p>留空 yt-dlp 路径会直接调用已加入系统 PATH 的 <code>yt-dlp.exe</code>，或回退到 <code>python -m yt_dlp</code>。</p>
+
+    <section class="setup-box" aria-labelledby="setup-title">
+      <h2 id="setup-title">新设备安装</h2>
+      <p class="hint">在扩展目录打开 PowerShell，运行下方命令（脚本会注册桥接并尽量自动安装 yt-dlp / Node / FFmpeg）：</p>
+      <pre id="setup-command" class="setup-command">正在读取扩展 ID…</pre>
+      <div class="actions">
+        <button id="copy-setup" type="button" class="secondary">复制安装命令</button>
+        <button id="install-tools" type="button" class="secondary">安装缺失工具</button>
+        <button id="test-bridge" type="button" class="secondary">测试桥接器</button>
+      </div>
+      <p id="deps-summary" class="hint"></p>
+    </section>
+
     <form id="settings-form">
       <label>
         yt-dlp.exe 路径（可选）
@@ -31,10 +44,9 @@
         YouTube cookies.txt 路径（可选备用）
         <input id="cookies-file-path" type="text" placeholder="C:\\path\\to\\youtube-cookies.txt">
       </label>
-      <p class="hint">自动读取 Cookie 不会上传或保存。cookies.txt 是自动读取失败时的备用方案；不要分享该文件。</p>
+      <p class="hint">自动读取 Cookie 不会上传或保存。cookies.txt 是自动读取失败时的备用方案；不要分享该文件。本机 7890 的 HTTP 代理会自动改为 socks5h。</p>
       <div class="actions">
         <button type="submit">保存设置</button>
-        <button id="test-bridge" type="button" class="secondary">测试桥接器</button>
       </div>
       <p id="message" role="status"></p>
     </form>

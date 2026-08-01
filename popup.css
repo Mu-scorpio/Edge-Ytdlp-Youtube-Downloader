@@ -20,7 +20,23 @@ h2 { font-size: 13px; margin: 0; }
 .progress > span { background: #0f9d58; display: block; height: 100%; transition: width .25s ease; }
 .task.error .progress > span { background: #b3261e; }
 .task__meta { color: color-mix(in srgb, CanvasText 62%, Canvas); font-size: 11px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task__meta.multi { white-space: pre-wrap; overflow: visible; text-overflow: unset; max-height: 7.5em; overflow-y: auto; }
 .task__meta.path { color: color-mix(in srgb, CanvasText 75%, Canvas); margin-top: 3px; }
+.deps { border-top: 1px solid color-mix(in srgb, CanvasText 13%, Canvas); margin-top: 14px; padding-top: 12px; }
+.deps-list { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.deps-item { align-items: baseline; background: color-mix(in srgb, CanvasText 5%, Canvas); border-radius: 6px; display: grid; gap: 4px 8px; grid-template-columns: 14px auto; font-size: 11px; padding: 7px 8px; }
+.deps-item .mark { font-weight: 700; grid-row: 1 / span 2; }
+.deps-item .name { font-weight: 600; }
+.deps-item .detail { color: color-mix(in srgb, CanvasText 62%, Canvas); grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deps-item.ok .mark { color: #08783f; }
+.deps-item.bad .mark { color: #b3261e; }
+.deps-item.warn .mark { color: #9a6700; }
+.deps-item.muted { color: color-mix(in srgb, CanvasText 60%, Canvas); }
+.setup-hint, .install-message { color: color-mix(in srgb, CanvasText 70%, Canvas); font-size: 11px; line-height: 1.4; margin: 8px 0 0; white-space: pre-wrap; }
+.install-message.ok { color: #08783f; }
+.install-message.warn { color: #9a6700; }
+.install-message.error { color: #b3261e; }
+.primary-text { color: #065fd4; font-weight: 600; }
 .task__copy { background: transparent; border: 0; color: #065fd4; cursor: pointer; font: inherit; padding: 0; }
 .empty { color: color-mix(in srgb, CanvasText 62%, Canvas); font-size: 12px; margin: 12px 0; text-align: center; }
 .debug { border-top: 1px solid color-mix(in srgb, CanvasText 13%, Canvas); margin-top: 14px; padding-top: 13px; }
