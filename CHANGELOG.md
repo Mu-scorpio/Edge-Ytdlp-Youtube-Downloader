@@ -4,6 +4,8 @@
 
 - 安装与打包脚本改为 `.bat`（不再使用 PowerShell 脚本）：`setup-native-host.bat`、`build-release.bat`。
 - Release 压缩包固定命名为 `edge-ytdlp-youtube-downloader.zip`（文件名不再附带版本号）。
+- `setup-native-host.bat` 支持无参数双击：交互输入扩展 ID，结束时暂停窗口，避免「闪退」看不清报错。
+- README 补充「复制扩展 ID → 绑定本机桥接」完整步骤与截图。
 
 ## v1.4.0 - 2026-08-02
 

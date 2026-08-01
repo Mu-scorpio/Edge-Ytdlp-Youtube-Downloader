@@ -88,7 +88,7 @@ Python / yt-dlp / Node / FFmpeg 状态一目了然；缺什么就装什么。
 - 下载目录默认跟随 Edge 设置  
 
 ### 新设备友好（v1.4）
-- 双击运行 `setup-native-host.bat`（或命令行传扩展 ID），尽量自动安装 Python / yt-dlp / Node / FFmpeg  
+- 双击 `setup-native-host.bat` 可交互输入扩展 ID；也可命令行传入，尽量自动安装 Python / yt-dlp / Node / FFmpeg  
 - 弹窗一键「安装缺失工具」  
 - 找不到 `yt-dlp.exe` 时回退 `python -m yt_dlp`  
 - 错误信息改成**能照着修**的中文说明  
@@ -115,35 +115,79 @@ edge-ytdlp-youtube-downloader.zip
 ### 2. 在 Edge 加载扩展
 
 1. 打开 `edge://extensions`  
-2. 打开 **开发人员模式**  
-3. **加载解压缩的扩展** → 选中含 `manifest.json` 的文件夹  
-4. 复制扩展卡片上的 **32 位 ID**（也可稍后在扩展设置页复制安装命令）
+2. 打开右上角 **开发人员模式**  
+3. 点击 **加载解压缩的扩展** → 选中含 `manifest.json` 的文件夹  
+4. 确认扩展卡片出现，并保持开关为 **开启**
 
-### 3. 一键注册本机桥接（并尽量装好工具）
+### 3. 复制扩展 ID（绑定桥接前必做）
 
-在扩展目录打开 **命令提示符** 或终端：
+Edge 为「解压加载」的扩展生成一串 **32 位 ID**（只含字母 `a`–`p`）。  
+本机桥接器必须把这个 ID 写进 Native Messaging 白名单，**否则扩展连不上本机 yt-dlp**。
+
+在 `edge://extensions` 找到 **YT-DLP YouTube Downloader** 卡片，复制 **ID:** 后面的整串字符：
+
+![在 edge://extensions 复制扩展 ID](docs/screenshots/extension-id.png)
+
+图中示例：
+
+| 项目 | 示例值 |
+| --- | --- |
+| 扩展名 | YT-DLP YouTube Downloader |
+| **ID** | `igihhfhnmhjpbhbdfdiabhngdmkliaf`（你的会不同） |
+
+要点：
+
+- ID 必须是 **恰好 32 个字符**，且只能是 **`a`–`p`**  
+- **每台电脑 / 每次重新「加载解压缩的扩展」** 都可能得到不同 ID  
+- 换目录、删掉重装、换 Edge 配置后，请用**新的** ID 重新跑安装脚本  
+- 设置页也可复制带当前 ID 的安装命令
+
+### 4. 用扩展 ID 注册本机桥接
+
+把上一步复制的 ID **绑定**到本机 Native Messaging Host。任选一种方式：
+
+#### 方式 A：双击脚本（推荐新手）
+
+1. 双击扩展目录里的 `setup-native-host.bat`  
+2. 窗口提示输入扩展 ID 时，**粘贴**刚才复制的 32 位 ID，回车  
+3. 等脚本跑完；成功或失败时窗口会暂停，方便查看输出  
+4. 按任意键关闭
+
+#### 方式 B：命令行传参
+
+在扩展目录打开 **命令提示符**（资源管理器地址栏输入 `cmd` 回车），执行：
 
 ```bat
 setup-native-host.bat 你的32位扩展ID
 ```
 
-也可以在资源管理器地址栏输入 `cmd` 回车后执行上述命令。
+把 `你的32位扩展ID` 换成真实 ID，例如：
 
-脚本会：
-- 检查 / 尝试安装 Python 3.9+  
-- `pip install "yt-dlp[default]"`  
-- 尝试用 winget 安装 Node.js 与 FFmpeg  
-- 注册 Edge Native Messaging Host  
-
-然后：
-1. 在 `edge://extensions` **重新加载**扩展  
-2. **刷新**已打开的 YouTube 标签页  
-3. 点扩展图标，确认显示「本机下载器已连接」
+```bat
+setup-native-host.bat igihhfhnmhjpbhbdfdiabhngdmkliaf
+```
 
 > 只想注册桥接、不自动装工具？加 `--skip-tools`：  
 > `setup-native-host.bat 你的扩展ID --skip-tools`
 
-### 4. 开始下载
+脚本会：
+
+- 校验扩展 ID 格式  
+- 检查 / 尝试安装 Python 3.9+  
+- `pip install "yt-dlp[default]"`  
+- 尝试用 winget 安装 Node.js 与 FFmpeg  
+- 写入 `native-host.cmd`、`com.local.ytdlp_downloader.json`  
+- 注册注册表项，把该 ID 加入 `allowed_origins`
+
+#### 注册完成后
+
+1. 回到 `edge://extensions`，点 **重新加载**  
+2. **刷新**已打开的 YouTube 标签页  
+3. 点扩展图标，确认显示「本机下载器已连接」
+
+若提示未连接：多半是 **ID 绑错或过期**——重新复制当前 ID，再跑一遍 `setup-native-host.bat`。
+
+### 5. 开始下载
 
 打开任意 YouTube 搜索 / 列表 / 播放页，点向下箭头即可。
 
@@ -220,7 +264,8 @@ Edge 下载目录（或你指定的路径）
 
 | 现象 | 先试这个 |
 | --- | --- |
-| 本机桥接器未连接 | 用**当前**扩展 ID 重跑 `setup-native-host.bat`，再重载扩展 |
+| 本机桥接器未连接 | 在 `edge://extensions` 复制**当前** 32 位 ID，重跑 `setup-native-host.bat` 绑定，再**重新加载**扩展 |
+| 双击 bat 一闪就关 / 不知道填什么 | 已支持无参数双击后提示输入 ID；若仍闪退请用 `cmd` 运行并查看报错 |
 | 扩展已更新后按钮失效 | 刷新 YouTube 页面（旧 content script 会失效） |
 | Sign in to confirm you're not a bot | 确认 Edge 已登录 YouTube、Cookie 开关开启、代理与浏览器同出口 |
 | Requested format is not available | 升级 `yt-dlp[default]`，确认 Node 已装 |
@@ -296,5 +341,5 @@ build-release.bat
 
 <p align="center">
   <sub>Made for people who just want a download button that actually works.</sub><br>
-  <a href="https://github.com/Mu-scorpio/edge-ytdlp-youtube-downloader/releases/latest">获取最新版</a>
+  <a href="https://github.com/Mu-scorpio/edge-ytdlp-youtube-downloader/releases/latest">获取 v1.4.1</a>
 </p>

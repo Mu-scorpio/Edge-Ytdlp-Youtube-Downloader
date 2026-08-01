@@ -15,6 +15,9 @@ set "EXTENSION_ID="
 set "PYTHON_PATH="
 set "SKIP_TOOLS=0"
 set "MISSING="
+rem Pause on exit when started without args (double-click / interactive prompt).
+set "INTERACTIVE=0"
+if "%~1"=="" set "INTERACTIVE=1"
 
 :parse_args
 if "%~1"=="" goto args_done
@@ -43,18 +46,33 @@ goto parse_args
 :args_done
 if not defined EXTENSION_ID (
   echo.
-  echo Usage:
-  echo   %~nx0 ^<32-char-extension-id^>
-  echo   %~nx0 ^<extension-id^> --skip-tools
-  echo   %~nx0 ^<extension-id^> --python "C:\Path\python.exe"
+  echo === YT-DLP Edge Native Host Setup ===
   echo.
-  echo Get the extension ID from edge://extensions after loading this folder.
+  echo No extension ID was provided.
+  echo Get it from edge://extensions after loading this folder.
   echo.
-  exit /b 1
+  set /p "EXTENSION_ID=Enter 32-char extension ID: "
+  if not defined EXTENSION_ID (
+    echo.
+    echo [ERROR] Extension ID is required.
+    echo.
+    echo Usage:
+    echo   %~nx0 ^<32-char-extension-id^>
+    echo   %~nx0 ^<extension-id^> --skip-tools
+    echo   %~nx0 ^<extension-id^> --python "C:\Path\python.exe"
+    echo.
+    call :pause_if_interactive
+    exit /b 1
+  )
+  rem trim accidental spaces
+  for /f "tokens=* delims= " %%A in ("!EXTENSION_ID!") do set "EXTENSION_ID=%%A"
 )
 
 call :validate_extension_id
-if errorlevel 1 exit /b 1
+if errorlevel 1 (
+  call :pause_if_interactive
+  exit /b 1
+)
 
 echo.
 echo === YT-DLP Edge Native Host Setup ===
@@ -66,6 +84,7 @@ if not exist "%ROOT%\native-host.py" (
   echo [ERROR] native-host.py not found in:
   echo   %ROOT%
   echo Unpack the ZIP first, then run this .bat from that folder.
+  call :pause_if_interactive
   exit /b 1
 )
 
@@ -73,6 +92,7 @@ rem --- Python ---
 if defined PYTHON_PATH (
   if not exist "%PYTHON_PATH%" (
     echo [ERROR] Python not found: %PYTHON_PATH%
+    call :pause_if_interactive
     exit /b 1
   )
 ) else (
@@ -90,6 +110,7 @@ if not defined PYTHON_PATH (
   echo [ERROR] Python 3.9+ is required.
   echo   Install: winget install -e --id Python.Python.3.12
   echo   Or pass: %~nx0 %EXTENSION_ID% --python "C:\Path\to\python.exe"
+  call :pause_if_interactive
   exit /b 1
 )
 echo [OK] Python: %PYTHON_PATH%
@@ -140,6 +161,7 @@ set "MANIFEST=%ROOT%\com.local.ytdlp_downloader.json"
 )
 if not exist "%LAUNCHER%" (
   echo [ERROR] Cannot write native-host.cmd
+  call :pause_if_interactive
   exit /b 1
 )
 echo [OK] Launcher: %LAUNCHER%
@@ -158,6 +180,7 @@ set "LAUNCHER_JSON=%LAUNCHER:\=\\%"
 )
 if not exist "%MANIFEST%" (
   echo [ERROR] Cannot write Native Host JSON
+  call :pause_if_interactive
   exit /b 1
 )
 echo [OK] Manifest: %MANIFEST%
@@ -166,6 +189,7 @@ set "REG_KEY=HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.local.ytdlp_d
 reg add "%REG_KEY%" /ve /t REG_SZ /d "%MANIFEST%" /f >nul
 if errorlevel 1 (
   echo [ERROR] Cannot write registry key: %REG_KEY%
+  call :pause_if_interactive
   exit /b 1
 )
 echo [OK] Registry: %REG_KEY%
@@ -186,9 +210,17 @@ echo.
 echo Unregister: reg delete "%REG_KEY%" /f
 echo Bridge log: %LOCALAPPDATA%\YT-DLP-Edge\bridge.log
 echo.
+call :pause_if_interactive
 exit /b 0
 
 rem ===================== helpers =====================
+
+:pause_if_interactive
+rem Pause when launched without CLI args (double-click), so the window stays open.
+if not "%INTERACTIVE%"=="1" exit /b 0
+echo.
+pause
+exit /b 0
 
 :validate_extension_id
 set "ID=%EXTENSION_ID%"
