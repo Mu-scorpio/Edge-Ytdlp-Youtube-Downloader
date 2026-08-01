@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 1200px; height: 720px;
+      font-family: "Roboto", "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #0f0f0f; color: #f1f1f1; overflow: hidden;
+    }
+    .chrome {
+      height: 40px; background: #212121; display: flex; align-items: center; gap: 10px; padding: 0 14px;
+      border-bottom: 1px solid #303030;
+    }
+    .dots span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+    .dots span:nth-child(1){background:#ff5f57} .dots span:nth-child(2){background:#febc2e} .dots span:nth-child(3){background:#28c840}
+    .url {
+      flex: 1; background: #121212; border-radius: 16px; height: 26px; display: flex; align-items: center;
+      padding: 0 12px; color: #aaa; font-size: 12px;
+    }
+    .layout { display: grid; grid-template-columns: 1.45fr .9fr; gap: 20px; padding: 18px 24px 24px; }
+    .player {
+      aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; position: relative;
+      background: linear-gradient(135deg, #1e293b, #0f172a 40%, #134e4a);
+    }
+    .player::after {
+      content: ""; position: absolute; inset: 0;
+      background:
+        radial-gradient(circle at 30% 40%, rgba(96,165,250,.25), transparent 40%),
+        radial-gradient(circle at 70% 60%, rgba(52,211,153,.2), transparent 35%);
+    }
+    .play {
+      position: absolute; inset: 0; margin: auto; width: 68px; height: 68px; border-radius: 50%;
+      background: rgba(0,0,0,.55); border: 2px solid rgba(255,255,255,.5);
+      display: grid; place-items: center; z-index: 1;
+    }
+    .play::before {
+      content: ""; border-style: solid; border-width: 12px 0 12px 20px;
+      border-color: transparent transparent transparent #fff; margin-left: 4px;
+    }
+    .meta { margin-top: 14px; }
+    h1 { font-size: 20px; font-weight: 650; line-height: 1.35; margin-bottom: 10px; }
+    .channel { display: flex; align-items: center; gap: 10px; color: #aaa; font-size: 13px; margin-bottom: 14px; }
+    .avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg,#3b82f6,#22c55e); }
+    .actions {
+      display: flex; align-items: center; gap: 6px; padding: 6px 0 2px;
+      border-top: 1px solid #272727; margin-top: 4px; padding-top: 12px;
+    }
+    .chip {
+      display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px;
+      border-radius: 18px; background: #272727; color: #f1f1f1; font-size: 13px; font-weight: 500;
+    }
+    .dl {
+      width: 40px; height: 40px; border-radius: 50%; border: 0; cursor: default;
+      background: transparent; color: #0f9d58; display: grid; place-items: center; position: relative;
+    }
+    .dl::after {
+      content: ""; position: absolute; inset: 3px; border-radius: 50%;
+      background: conic-gradient(#0f9d58 68%, transparent 0);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+      mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+    }
+    .dl svg { position: relative; z-index: 1; }
+    .callout {
+      margin-left: 4px; background: #0f9d58; color: #04140b; font-size: 12px; font-weight: 700;
+      border-radius: 8px; padding: 8px 10px; position: relative;
+    }
+    .callout::before {
+      content: ""; position: absolute; left: -6px; top: 50%; transform: translateY(-50%);
+      border: 6px solid transparent; border-right-color: #0f9d58; border-left: 0;
+    }
+    .side .card {
+      background: #212121; border-radius: 12px; padding: 14px; margin-bottom: 10px;
+      display: grid; grid-template-columns: 168px 1fr; gap: 12px;
+    }
+    .thumb { border-radius: 8px; background: linear-gradient(120deg,#334155,#1e293b); height: 94px; }
+    .side h3 { font-size: 14px; font-weight: 550; line-height: 1.35; margin-bottom: 6px; }
+    .side p { color: #aaa; font-size: 12px; line-height: 1.4; }
+    .toast {
+      position: absolute; left: 48px; bottom: 36px; width: 320px;
+      background: #212121; border-radius: 10px; padding: 14px 16px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.45); border: 1px solid #303030;
+    }
+    .toast strong { display: block; color: #0f9d58; font-size: 14px; margin-bottom: 4px; }
+    .toast span { display: block; font-size: 13px; margin-bottom: 4px; }
+    .toast small { color: #aaa; font-size: 11px; }
+    .frame { position: relative; }
+  </style>
+</head>
+<body>
+  <div class="chrome">
+    <div class="dots"><span></span><span></span><span></span></div>
+    <div class="url">https://www.youtube.com/watch?v=dQw4w9WgXcQ</div>
+  </div>
+  <div class="frame">
+    <div class="layout">
+      <div>
+        <div class="player"><div class="play"></div></div>
+        <div class="meta">
+          <h1>用 Edge 本地下载 4K 视频 · 进度环与 Toast 实时反馈</h1>
+          <div class="channel"><div class="avatar"></div><div>Demo Channel · 128 万次观看 · 2 天前</div></div>
+          <div class="actions">
+            <div class="chip">👍 12K</div>
+            <div class="chip">分享</div>
+            <div class="chip">保存</div>
+            <button class="dl" title="正在下载">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a1 1 0 0 1 1 1v9.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.4L11 13.6V4a1 1 0 0 1 1-1Zm-7 15a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1Z"/></svg>
+            </button>
+            <div class="callout">下载中 68%</div>
+            <div class="chip">⋯</div>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="card"><div class="thumb"></div><div><h3>相关：播放列表逐条下载</h3><p>每条视频菜单旁都有独立按钮，不会误下整表</p></div></div>
+        <div class="card"><div class="thumb"></div><div><h3>相关：搜索结果一键入队</h3><p>三点菜单左侧出现下载箭头</p></div></div>
+        <div class="card"><div class="thumb"></div><div><h3>相关：自动携带登录 Cookie</h3><p>应对机器人检测更稳</p></div></div>
+      </div>
+    </div>
+    <div class="toast">
+      <strong>正在下载 68%</strong>
+      <span>用 Edge 本地下载 4K 视频 · 进度环与 Toast 实时反馈</span>
+      <small>C:\Users\Demo\Downloads</small>
+    </div>
+  </div>
+</body>
+</html>

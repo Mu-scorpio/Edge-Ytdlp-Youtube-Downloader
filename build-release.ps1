@@ -38,6 +38,10 @@ $sourceFiles = @(
     'icons/icon32.png',
     'icons/icon48.png',
     'icons/icon128.png',
+    'docs/screenshots/hero.png',
+    'docs/screenshots/watch.png',
+    'docs/screenshots/popup.png',
+    'docs/screenshots/search.png',
     'README.md',
     'CHANGELOG.md',
     'LICENSE'

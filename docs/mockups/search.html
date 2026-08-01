@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 1200px; height: 720px;
+      font-family: "Roboto", "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #0f0f0f; color: #f1f1f1; overflow: hidden;
+    }
+    .top {
+      height: 56px; border-bottom: 1px solid #272727; display: flex; align-items: center;
+      padding: 0 24px; gap: 18px;
+    }
+    .logo { color: #fff; font-weight: 700; letter-spacing: -.02em; font-size: 18px; }
+    .logo span { color: #ff0033; }
+    .search {
+      flex: 1; max-width: 640px; height: 40px; border-radius: 20px 0 0 20px;
+      background: #121212; border: 1px solid #303030; color: #aaa; display: flex; align-items: center;
+      padding: 0 16px; font-size: 14px;
+    }
+    .search-btn {
+      height: 40px; width: 64px; border-radius: 0 20px 20px 0; background: #222;
+      border: 1px solid #303030; border-left: 0; display: grid; place-items: center; color: #aaa;
+    }
+    .main { padding: 18px 48px; }
+    .filter { color: #aaa; font-size: 13px; margin-bottom: 16px; }
+    .item {
+      display: grid; grid-template-columns: 360px 1fr auto; gap: 16px; margin-bottom: 18px;
+      align-items: start; padding: 8px; border-radius: 12px;
+    }
+    .item.highlight {
+      background: rgba(15,157,88,.08); outline: 1px dashed rgba(15,157,88,.45);
+    }
+    .thumb {
+      height: 202px; border-radius: 12px;
+      background: linear-gradient(135deg, #1e293b, #0f766e 60%, #1d4ed8);
+      position: relative;
+    }
+    .thumb.b { background: linear-gradient(135deg, #3f1d4d, #9f1239 50%, #1e3a5f); }
+    .thumb.c { background: linear-gradient(135deg, #14532d, #065f46 45%, #0e7490); }
+    .dur {
+      position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.8);
+      border-radius: 4px; padding: 2px 6px; font-size: 12px;
+    }
+    h3 { font-size: 18px; font-weight: 550; line-height: 1.35; margin-bottom: 8px; }
+    .meta { color: #aaa; font-size: 13px; line-height: 1.5; }
+    .menu {
+      display: flex; align-items: center; gap: 2px; margin-top: 8px;
+    }
+    .dl, .more {
+      width: 40px; height: 40px; border-radius: 50%; border: 0; background: transparent;
+      color: #aaa; display: grid; place-items: center;
+    }
+    .item.highlight .dl { color: #0f9d58; background: rgba(15,157,88,.12); }
+    .label {
+      margin-top: 4px; display: inline-flex; align-items: center; gap: 6px;
+      background: #0f9d58; color: #04140b; font-size: 12px; font-weight: 700;
+      border-radius: 999px; padding: 6px 12px;
+    }
+    .footer-note {
+      position: absolute; left: 48px; bottom: 28px;
+      background: #212121; border: 1px solid #303030; border-radius: 10px;
+      padding: 12px 16px; font-size: 13px; color: #ddd; max-width: 420px;
+    }
+    .footer-note strong { color: #4ade80; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="logo"><span>▶</span> YouTube</div>
+    <div class="search">edge yt-dlp 本地下载</div>
+    <div class="search-btn">🔍</div>
+  </div>
+  <div class="main">
+    <div class="filter">约 128,000 条结果 · 筛选</div>
+
+    <div class="item highlight">
+      <div class="thumb"><span class="dur">12:48</span></div>
+      <div>
+        <h3>Edge 扩展 + yt-dlp：在搜索结果直接下载</h3>
+        <div class="meta">Demo Channel · 86 万次观看 · 1 周前<br>三点菜单左侧的绿色下载箭头，一键加入本机队列</div>
+        <div class="label">⬇ 本扩展注入的下载按钮</div>
+      </div>
+      <div class="menu">
+        <button class="dl">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a1 1 0 0 1 1 1v9.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.4L11 13.6V4a1 1 0 0 1 1-1Zm-7 15a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1Z"/></svg>
+        </button>
+        <button class="more">⋮</button>
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="thumb b"><span class="dur">8:02</span></div>
+      <div>
+        <h3>播放列表页同样支持逐条下载</h3>
+        <div class="meta">Another Channel · 21 万次观看 · 3 天前<br>不会一键误下整个列表</div>
+      </div>
+      <div class="menu">
+        <button class="dl">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a1 1 0 0 1 1 1v9.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.4L11 13.6V4a1 1 0 0 1 1-1Zm-7 15a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1Z"/></svg>
+        </button>
+        <button class="more">⋮</button>
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="thumb c"><span class="dur">22:15</span></div>
+      <div>
+        <h3>Cookie、代理、并行任务一应俱全</h3>
+        <div class="meta">Open Source Lab · 5.2 万次观看 · 昨天</div>
+      </div>
+      <div class="menu">
+        <button class="dl">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a1 1 0 0 1 1 1v9.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.4L11 13.6V4a1 1 0 0 1 1-1Zm-7 15a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1Z"/></svg>
+        </button>
+        <button class="more">⋮</button>
+      </div>
+    </div>
+  </div>
+  <div class="footer-note"><strong>搜索页 / 列表页 / 播放页</strong> 三处按钮位置对齐 YouTube 原生菜单，不挡标题、不抢操作。</div>
+</body>
+</html>

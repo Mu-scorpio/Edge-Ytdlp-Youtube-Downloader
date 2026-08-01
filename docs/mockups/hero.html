@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 1280px; height: 640px;
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 15% 10%, #1a3a6b 0%, transparent 55%),
+                  radial-gradient(900px 500px at 90% 80%, #0b3d2e 0%, transparent 50%),
+                  linear-gradient(145deg, #0b1220 0%, #111827 45%, #0f172a 100%);
+      color: #f8fafc;
+      overflow: hidden;
+      position: relative;
+    }
+    .grid {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+    }
+    .wrap {
+      position: relative; z-index: 1;
+      display: grid; grid-template-columns: 1.15fr .95fr;
+      height: 100%; padding: 56px 64px; gap: 36px; align-items: center;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(59,130,246,.15); border: 1px solid rgba(96,165,250,.35);
+      color: #93c5fd; border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600;
+      margin-bottom: 18px;
+    }
+    .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.2); }
+    h1 { font-size: 52px; line-height: 1.12; letter-spacing: -.02em; font-weight: 750; margin-bottom: 18px; }
+    h1 span { background: linear-gradient(90deg, #60a5fa, #34d399); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lead { font-size: 20px; line-height: 1.55; color: #cbd5e1; max-width: 540px; margin-bottom: 28px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+    .chip {
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+      border-radius: 10px; padding: 10px 14px; font-size: 14px; color: #e2e8f0;
+    }
+    .card {
+      background: linear-gradient(180deg, rgba(30,41,59,.92), rgba(15,23,42,.96));
+      border: 1px solid rgba(148,163,184,.22);
+      border-radius: 20px; padding: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.45);
+    }
+    .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand img { width: 44px; height: 44px; border-radius: 50%; }
+    .brand strong { display: block; font-size: 16px; }
+    .brand small { color: #94a3b8; font-size: 12px; }
+    .pill { background: rgba(34,197,94,.15); color: #4ade80; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
+    .row {
+      background: rgba(255,255,255,.04); border-radius: 12px; padding: 14px;
+      margin-bottom: 10px; border: 1px solid rgba(255,255,255,.05);
+    }
+    .row-title { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 14px; }
+    .row-title em { font-style: normal; color: #4ade80; font-weight: 700; font-size: 12px; }
+    .bar { height: 4px; background: rgba(255,255,255,.08); border-radius: 999px; overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 72%; background: linear-gradient(90deg, #22c55e, #4ade80); border-radius: 999px; }
+    .row.done .bar > i { width: 100%; }
+    .meta { margin-top: 8px; color: #94a3b8; font-size: 12px; }
+    .yt-mock {
+      margin-top: 14px; background: #0f0f0f; border-radius: 14px; padding: 14px 16px;
+      display: flex; align-items: center; justify-content: space-between; border: 1px solid #272727;
+    }
+    .yt-title { font-size: 13px; color: #f1f5f9; }
+    .yt-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+    .btn {
+      width: 42px; height: 42px; border-radius: 50%; border: 0;
+      background: rgba(255,255,255,.08); color: #f8fafc; display: grid; place-items: center;
+      box-shadow: 0 0 0 2px rgba(15,157,88,.55), 0 0 24px rgba(15,157,88,.25);
+    }
+  </style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="wrap">
+    <div>
+      <div class="badge"><span class="dot"></span> Edge · Windows · 本地下载</div>
+      <h1>在 YouTube 上<br><span>一点即下</span></h1>
+      <p class="lead">把 yt-dlp 装进 Edge：搜索页、播放列表、视频页原生下载按钮，Cookie 自动带上，进度实时可见。</p>
+      <div class="chips">
+        <div class="chip">本地运行 · 不经过第三方服务器</div>
+        <div class="chip">并行任务</div>
+        <div class="chip">新设备自动装依赖</div>
+        <div class="chip">最高画质 + 字幕</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-top">
+        <div class="brand">
+          <img src="icon128.png" alt="">
+          <div>
+            <strong>YT-DLP 下载器</strong>
+            <small>本机下载器已连接 v1.4.0</small>
+          </div>
+        </div>
+        <div class="pill">在线</div>
+      </div>
+      <div class="row">
+        <div class="row-title"><span>4K 旅行 Vlog · 冰岛极光</span><em>72%</em></div>
+        <div class="bar"><i></i></div>
+        <div class="meta">正在下载 · 预计剩余 00:42</div>
+      </div>
+      <div class="row done">
+        <div class="row-title"><span>频道合集 · EP03</span><em>已完成</em></div>
+        <div class="bar"><i></i></div>
+        <div class="meta">保存到 C:\Users\…\Downloads</div>
+      </div>
+      <div class="yt-mock">
+        <div>
+          <div class="yt-title">播放页「保存」旁的下载按钮</div>
+          <div class="yt-sub">点击即可排队 · 绿色环显示进度</div>
+        </div>
+        <button class="btn" aria-label="download">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a1 1 0 0 1 1 1v9.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.4L11 13.6V4a1 1 0 0 1 1-1Zm-7 15a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1Z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

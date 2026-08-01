@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 920px; height: 640px;
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      background: linear-gradient(145deg, #e8eef7, #f4f7fb 40%, #e7f5ee);
+      display: grid; place-items: center;
+    }
+    .desk { position: relative; width: 100%; height: 100%; }
+    .blur-a, .blur-b {
+      position: absolute; border-radius: 50%; filter: blur(40px); opacity: .55;
+    }
+    .blur-a { width: 280px; height: 280px; background: #93c5fd; left: 80px; top: 90px; }
+    .blur-b { width: 260px; height: 260px; background: #86efac; right: 100px; bottom: 80px; }
+    .popup {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: 400px; background: #fff; color: #111; border-radius: 14px;
+      box-shadow: 0 28px 80px rgba(15,23,42,.22), 0 2px 0 rgba(255,255,255,.8) inset;
+      padding: 16px; border: 1px solid rgba(15,23,42,.08);
+    }
+    header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+    h1 { font-size: 16px; margin-bottom: 4px; }
+    .status { color: #08783f; font-size: 12px; }
+    .gear { border: 0; background: transparent; color: #333; font-size: 12px; padding: 6px 8px; border-radius: 5px; }
+    section { border-top: 1px solid #e5e7eb; margin-top: 13px; padding-top: 12px; }
+    .heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    h2 { font-size: 13px; }
+    .text-btn { border: 0; background: transparent; color: #333; font-size: 12px; padding: 4px 6px; }
+    .text-btn.blue { color: #065fd4; font-weight: 600; }
+    .deps { display: grid; gap: 6px; }
+    .dep {
+      display: grid; grid-template-columns: 14px 1fr; gap: 2px 8px;
+      background: #f4f5f7; border-radius: 6px; padding: 7px 8px; font-size: 11px;
+    }
+    .dep .mark { color: #08783f; font-weight: 700; grid-row: 1 / span 2; }
+    .dep .name { font-weight: 600; }
+    .dep .detail { color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ok-msg { color: #08783f; font-size: 11px; margin-top: 8px; }
+    .task {
+      background: #f4f5f7; border-radius: 7px; padding: 10px; margin-bottom: 9px;
+    }
+    .task-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .state { font-size: 11px; color: #6b7280; white-space: nowrap; }
+    .state.green { color: #08783f; }
+    .bar { height: 3px; background: #d1d5db; border-radius: 2px; overflow: hidden; margin-bottom: 7px; }
+    .bar > i { display: block; height: 100%; background: #0f9d58; }
+    .meta { font-size: 11px; color: #6b7280; }
+    .path { margin-top: 3px; color: #374151; }
+    .copy { color: #065fd4; }
+    .caption {
+      position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%);
+      background: rgba(15,23,42,.82); color: #fff; border-radius: 999px;
+      padding: 8px 16px; font-size: 13px; white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="desk">
+    <div class="blur-a"></div>
+    <div class="blur-b"></div>
+    <div class="popup">
+      <header>
+        <div>
+          <h1>YT-DLP 下载器</h1>
+          <p class="status">本机下载器已连接 v1.4.0；进度实时更新</p>
+        </div>
+        <button class="gear">设置</button>
+      </header>
+      <section>
+        <div class="heading">
+          <h2>本机依赖</h2>
+          <span>
+            <button class="text-btn">刷新</button>
+            <button class="text-btn blue">安装缺失工具</button>
+          </span>
+        </div>
+        <div class="deps">
+          <div class="dep"><span class="mark">✓</span><span class="name">Python</span><span class="detail">3.11.9</span></div>
+          <div class="dep"><span class="mark">✓</span><span class="name">yt-dlp</span><span class="detail">2026.07.04</span></div>
+          <div class="dep"><span class="mark">✓</span><span class="name">Node.js</span><span class="detail">v24.16.0</span></div>
+          <div class="dep"><span class="mark">✓</span><span class="name">FFmpeg</span><span class="detail">8.1.1</span></div>
+        </div>
+        <p class="ok-msg">依赖就绪 · 桥接 v1.4.0</p>
+      </section>
+      <section>
+        <div class="heading">
+          <h2>下载状态</h2>
+          <button class="text-btn">清除已结束</button>
+        </div>
+        <div class="task">
+          <div class="task-row"><span class="title">冰岛极光延时摄影 4K</span><span class="state">正在下载 72%</span></div>
+          <div class="bar"><i style="width:72%"></i></div>
+          <div class="meta">预计剩余 00:42</div>
+          <div class="meta path">保存到：C:\Users\Demo\Downloads</div>
+        </div>
+        <div class="task">
+          <div class="task-row"><span class="title">频道精选 EP03</span><span class="state green">已完成</span></div>
+          <div class="bar"><i style="width:100%"></i></div>
+          <div class="meta path">保存到：C:\Users\Demo\Downloads <span class="copy">复制</span></div>
+        </div>
+      </section>
+    </div>
+    <div class="caption">扩展弹窗 · 依赖检测 · 实时任务进度</div>
+  </div>
+</body>
+</html>
