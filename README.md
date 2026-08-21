@@ -341,5 +341,5 @@ build-release.bat
 
 <p align="center">
   <sub>Made for people who just want a download button that actually works.</sub><br>
-  <a href="https://github.com/Mu-scorpio/edge-ytdlp-youtube-downloader/releases/latest">获取 v1.4.1</a>
+  <a href="https://github.com/Mu-scorpio/edge-ytdlp-youtube-downloader/releases/latest">获取 v1.4.2</a>
 </p>

@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 WRITE_LOCK = threading.Lock()
 LOG_PATH = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "YT-DLP-Edge" / "bridge.log"
-BRIDGE_VERSION = "1.4.1"
+BRIDGE_VERSION = "1.4.2"
 INSTALL_LOCK = threading.Lock()
 
 
