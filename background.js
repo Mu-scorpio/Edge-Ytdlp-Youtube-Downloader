@@ -23,7 +23,7 @@ const taskStoreReady = chrome.storage.local.get({ downloadTasks: [] }).then(({ d
   });
   for (const task of restored) tasks.set(task.id, task);
   return chrome.storage.local.set({ downloadTasks: restored });
-});
+}).catch(() => {});
 
 function debug(event, detail = {}) {
   const entry = { at: new Date().toISOString(), source: "background", event, detail };
@@ -114,7 +114,7 @@ function settleBridgeWaiters(connected) {
 function handleNativeMessage(message) {
   debug("native-message", { event: message?.event || "missing-event", hasTask: Boolean(message?.task?.id) });
   if (message?.event === "task" && message.task?.id) {
-    publishTask(message.task);
+    publishTask(message.task).catch(() => {});
   }
   if (message?.event === "pong") {
     bridgeError = "";
@@ -166,7 +166,7 @@ function ensureNativePort() {
       }
       pendingInstall.clear();
       nativePort = null;
-      failActiveTasks(bridgeError);
+      failActiveTasks(bridgeError).catch(() => {});
     });
     nativePort.postMessage({ action: "ping" });
     debug("native-ping-sent");
@@ -180,7 +180,7 @@ function ensureNativePort() {
   }
 }
 
-async function waitForBridge(timeoutMs = 2500) {
+async function waitForBridge(timeoutMs = 10000) {
   if (bridgeReady) return true;
   if (!ensureNativePort()) return false;
   if (bridgeReady) return true;

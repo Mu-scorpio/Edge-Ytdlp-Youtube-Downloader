@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- 修复：消除所有可能产生「Uncaught (in promise)」的路径——`popup.js` / `options.js` 中未兜底的 `chrome.runtime.sendMessage`、`background.js` 的 `taskStoreReady` / `publishTask` / `failActiveTasks` 未捕获拒绝，全部补上 try/catch 或 `.catch`。扩展重新加载瞬间出现的「Error: No SW」不再刷出未捕获错误。
+- 修复：YouTube 页面间切换后，下载按钮不会重置，仍显示上一视频的绿色「下载完成」状态并可能误触发两次点击；现在导航到其他视频时会自动恢复为默认状态。
+- 修复：点击下载后立即禁用按钮，避免桥接响应较慢时重复点击产生重复下载任务。
+
 ## v1.4.1 - 2026-08-02
 
 - 安装与打包脚本改为 `.bat`（不再使用 PowerShell 脚本）：`setup-native-host.bat`、`build-release.bat`。

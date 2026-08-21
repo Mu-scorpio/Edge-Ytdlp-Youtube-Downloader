@@ -27,9 +27,13 @@ async function restoreSettings() {
 }
 
 async function loadSetupInfo() {
-  const info = await chrome.runtime.sendMessage({ type: "get-setup-info" });
-  const command = info?.setupCommand || `setup-native-host.bat ${chrome.runtime.id}`;
-  setupCommand.textContent = command;
+  try {
+    const info = await chrome.runtime.sendMessage({ type: "get-setup-info" });
+    const command = info?.setupCommand || `setup-native-host.bat ${chrome.runtime.id}`;
+    setupCommand.textContent = command;
+  } catch {
+    setupCommand.textContent = `setup-native-host.bat ${chrome.runtime.id}`;
+  }
 }
 
 async function refreshDiagnosis() {

@@ -244,7 +244,7 @@ function watchTask(button, id) {
   window.setTimeout(refreshTask, 120);
 }
 
-function createDownloadButton(getVideoInfo, surface) {
+function createDownloadButton(getVideoInfo, surface, videoId = "") {
   const button = document.createElement("button");
   button.type = "button";
   button.className = BUTTON_CLASS;
@@ -263,6 +263,7 @@ function createDownloadButton(getVideoInfo, surface) {
   const percent = document.createElement("span");
   percent.className = "ytdlp-download-button__percent";
   button.append(icon, percent);
+  if (videoId) button.dataset.videoId = videoId;
 
   button.addEventListener("click", async (event) => {
     event.preventDefault();
@@ -279,11 +280,13 @@ function createDownloadButton(getVideoInfo, surface) {
       });
 
       setButtonState(button, "pending", "正在加入 yt-dlp 下载队列…");
+      button.disabled = true;
       const result = await safeRuntimeMessage({ type: "download", ...video });
       if (!result) throw new Error("扩展已更新，请刷新此 YouTube 页面后重试");
       if (!result?.ok) throw new Error(result?.error || "无法加入下载队列");
       diagnostic("download-message-response", { ok: true, surface, taskId: result.task.id });
       button.dataset.taskId = result.task.id;
+      button.dataset.videoId = videoIdOf(video);
       applyTaskToButton(button, result.task);
       showToast(result.task);
       watchTask(button, result.task.id);
@@ -318,8 +321,9 @@ function addSearchButtons(root) {
     if (renderer.querySelector(`.${BUTTON_CLASS}[${SURFACE_ATTRIBUTE}="search"]`)) continue;
     const menu = renderer.querySelector("#menu ytd-menu-renderer");
     const originalMenuButton = menu?.querySelector("yt-icon-button");
-    if (!menu || !originalMenuButton || !videoInfoFromContainer(renderer)) continue;
-    menu.insertBefore(createDownloadButton(() => videoInfoFromContainer(renderer), "search"), originalMenuButton);
+    const video = videoInfoFromContainer(renderer);
+    if (!menu || !originalMenuButton || !video) continue;
+    menu.insertBefore(createDownloadButton(() => videoInfoFromContainer(renderer), "search", videoIdOf(video)), originalMenuButton);
   }
 }
 
@@ -332,12 +336,13 @@ function addPlaylistButtons(root) {
   ];
   for (const renderer of renderers) {
     if (renderer.querySelector(`.${BUTTON_CLASS}[${SURFACE_ATTRIBUTE}="playlist"]`)) continue;
-    if (!videoInfoFromContainer(renderer)) continue;
+    const video = videoInfoFromContainer(renderer);
+    if (!video) continue;
 
     const menuModel = renderer.querySelector("yt-lockup-metadata-view-model button-view-model, #menu ytd-menu-renderer, ytd-menu-renderer");
     const menuButton = menuModel?.querySelector("button, yt-icon-button");
     if (!menuModel || !menuButton) continue;
-    menuModel.before(createDownloadButton(() => videoInfoFromContainer(renderer), "playlist"));
+    menuModel.before(createDownloadButton(() => videoInfoFromContainer(renderer), "playlist", videoIdOf(video)));
   }
 }
 
@@ -351,7 +356,7 @@ function addWatchButton() {
   );
   const insertionPoint = directChildOf(menu, moreButton);
   if (!insertionPoint) return;
-  menu.insertBefore(createDownloadButton(videoInfoFromWatchPage, "watch"), insertionPoint);
+  menu.insertBefore(createDownloadButton(videoInfoFromWatchPage, "watch", currentWatchVideoId()), insertionPoint);
 }
 
 function addButtons(root = document) {
@@ -364,7 +369,45 @@ function scheduleButtonScan(root = document) {
   window.requestAnimationFrame(() => addButtons(root));
 }
 
+function currentWatchVideoId() {
+  const url = parseVideoUrl(location.href);
+  return url ? (url.searchParams.get("v") || "") : "";
+}
+
+function videoIdOf(video) {
+  try {
+    return video?.url ? (new URL(video.url).searchParams.get("v") || "") : "";
+  } catch {
+    return "";
+  }
+}
+
+function resetButtonState(button) {
+  const taskId = button.dataset.taskId;
+  if (taskId && taskPollers.has(taskId)) {
+    window.clearInterval(taskPollers.get(taskId));
+    taskPollers.delete(taskId);
+  }
+  button.disabled = false;
+  delete button.dataset.downloadState;
+  delete button.dataset.taskId;
+  button.style.removeProperty("--download-progress");
+  const percentElement = button.querySelector(".ytdlp-download-button__percent");
+  if (percentElement) percentElement.textContent = "";
+  button.setAttribute("aria-label", "使用 yt-dlp 下载");
+  button.title = "使用 yt-dlp 下载";
+}
+
+function resetStaleButtons() {
+  const currentId = currentWatchVideoId();
+  document.querySelectorAll(`.${BUTTON_CLASS}`).forEach((button) => {
+    if (button.dataset.videoId && button.dataset.videoId === currentId) return;
+    resetButtonState(button);
+  });
+}
+
 function scanCurrentPage() {
+  resetStaleButtons();
   addButtons();
   for (const delay of [250, 750, 1500, 3000]) {
     window.setTimeout(() => addButtons(), delay);

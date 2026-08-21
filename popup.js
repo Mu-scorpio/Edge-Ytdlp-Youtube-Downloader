@@ -72,7 +72,14 @@ function renderDeps(result) {
 }
 
 async function refresh() {
-  const result = await chrome.runtime.sendMessage({ type: "get-downloads" });
+  let result;
+  try {
+    result = await chrome.runtime.sendMessage({ type: "get-downloads" });
+  } catch (error) {
+    statusElement.textContent = "后台服务暂不可用（扩展可能正在重新加载），请稍后重试";
+    statusElement.className = "status error";
+    return;
+  }
   renderTasks(result?.tasks || []);
   if (!result?.ok || result?.bridgeError) {
     statusElement.textContent = `本机桥接器未连接`;
@@ -93,7 +100,14 @@ async function refresh() {
 async function refreshDeps() {
   installMessage.textContent = "正在检测依赖…";
   installMessage.className = "install-message";
-  const result = await chrome.runtime.sendMessage({ type: "diagnose" });
+  let result;
+  try {
+    result = await chrome.runtime.sendMessage({ type: "diagnose" });
+  } catch {
+    installMessage.textContent = "后台服务暂不可用（扩展可能正在重新加载），请稍后重试";
+    installMessage.className = "install-message error";
+    return;
+  }
   renderDeps(result);
   if (!result?.ok) {
     statusElement.textContent = "本机桥接器未连接";
@@ -103,7 +117,13 @@ async function refreshDeps() {
 }
 
 async function refreshDebug() {
-  const result = await chrome.runtime.sendMessage({ type: "get-debug-log" });
+  let result;
+  try {
+    result = await chrome.runtime.sendMessage({ type: "get-debug-log" });
+  } catch {
+    debugLogElement.textContent = "读取日志失败（后台服务暂不可用）";
+    return;
+  }
   const lines = (result?.entries || []).slice(-40).map((entry) => {
     const time = entry.at ? new Date(entry.at).toLocaleTimeString() : "--:--:--";
     const detail = Object.keys(entry.detail || {}).length ? ` ${JSON.stringify(entry.detail)}` : "";
@@ -137,9 +157,9 @@ taskList.addEventListener("click", async (event) => {
 });
 
 document.querySelector("#open-options").addEventListener("click", () => chrome.runtime.openOptionsPage());
-document.querySelector("#clear-finished").addEventListener("click", async () => { await chrome.runtime.sendMessage({ type: "clear-downloads" }); refresh(); });
+document.querySelector("#clear-finished").addEventListener("click", async () => { await chrome.runtime.sendMessage({ type: "clear-downloads" }).catch(() => {}); refresh(); });
 document.querySelector("#copy-debug").addEventListener("click", async () => { await navigator.clipboard.writeText(debugLogElement.textContent); });
-document.querySelector("#clear-debug").addEventListener("click", async () => { await chrome.runtime.sendMessage({ type: "clear-debug-log" }); refreshDebug(); });
+document.querySelector("#clear-debug").addEventListener("click", async () => { await chrome.runtime.sendMessage({ type: "clear-debug-log" }).catch(() => {}); refreshDebug(); });
 document.querySelector("#refresh-deps").addEventListener("click", () => refreshDeps());
 
 installButton.addEventListener("click", async () => {
