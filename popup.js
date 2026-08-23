@@ -10,17 +10,70 @@ let currentTasks = [];
 const stateLabel = { connecting: "正在连接", queued: "等待开始", downloading: "正在下载", completed: "已完成", error: "下载失败" };
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
+function taskMediaType(task) {
+  return task.mediaType || (task.downloadPreset === "audio" ? "audio" : "video");
+}
+
+function progressValue(value, fallback = 0) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return Math.min(100, Math.max(0, Math.round(fallback || 0)));
+  return Math.min(100, Math.max(0, Math.round(numeric)));
+}
+
+function progressRows(task) {
+  const fallback = progressValue(task.progress);
+  const fallbackSpeed = task.speed || "";
+  const fallbackEta = task.eta || "";
+  if (taskMediaType(task) === "audio") {
+    return [{
+      key: "audio",
+      label: "音频",
+      value: progressValue(task.audioProgress, fallback),
+      speed: task.audioSpeed || fallbackSpeed,
+      eta: task.audioEta || fallbackEta
+    }];
+  }
+  return [
+    {
+      key: "video",
+      label: "视频",
+      value: progressValue(task.videoProgress, fallback),
+      speed: task.videoSpeed || fallbackSpeed,
+      eta: task.videoEta || fallbackEta
+    },
+    {
+      key: "audio",
+      label: "音频",
+      value: progressValue(task.audioProgress, task.status === "completed" ? fallback : 0),
+      speed: task.audioSpeed || fallbackSpeed,
+      eta: task.audioEta || fallbackEta
+    }
+  ];
+}
+
+function renderProgressRows(task) {
+  return `<div class="progress-stack" aria-label="下载进度">${progressRows(task).map((row) => `
+    <div class="progress-row">
+      <div class="progress-row__head">
+        <span class="progress-row__label">${row.label}</span>
+        <span class="progress-row__metrics">${escapeHtml([row.speed, row.eta ? `剩余 ${row.eta}` : ""].filter(Boolean).join(" · ") || (task.status === "completed" ? "已完成" : "等待速度"))}</span>
+        <span class="progress-row__value">${row.value}%</span>
+      </div>
+      <div class="progress" aria-label="${row.label}进度 ${row.value}%"><span style="width:${row.value}%"></span></div>
+    </div>`).join("")}
+  </div>`;
+}
+
 function renderTasks(tasks) {
   currentTasks = tasks;
   if (!tasks.length) { taskList.innerHTML = '<p class="empty">暂无下载任务</p>'; return; }
   taskList.innerHTML = tasks.map((task) => {
-    const progress = Math.round(task.progress || 0);
     const detail = task.error || task.subtitleError || task.outputDirectory || "等待本机下载器确认保存目录";
-    const eta = task.status === "downloading" && task.eta ? ` · 剩余 ${task.eta}` : "";
     return `<article class="task ${escapeHtml(task.status)}">
-      <div class="task__row"><span class="task__title" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</span><span class="task__state ${escapeHtml(task.status)}">${stateLabel[task.status] || task.status}${task.status === "downloading" ? ` ${progress}%` : ""}</span></div>
-      <div class="progress" aria-label="下载进度 ${progress}%"><span style="width:${progress}%"></span></div>
-      <div class="task__meta multi">${escapeHtml(detail)}${escapeHtml(eta)}</div>
+      <div class="task__row"><span class="task__title" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</span><span class="task__state ${escapeHtml(task.status)}">${stateLabel[task.status] || task.status}</span></div>
+      ${renderProgressRows(task)}
+      ${task.formatLabel ? `<div class="task__meta format">下载：${escapeHtml(task.formatLabel)}</div>` : ""}
+      <div class="task__meta multi">${escapeHtml(detail)}</div>
       ${task.outputDirectory ? `<div class="task__meta path" title="${escapeHtml(task.outputDirectory)}">保存到：${escapeHtml(task.outputDirectory)} <button class="task__copy" data-path="${escapeHtml(task.outputDirectory)}" type="button">复制</button></div>` : ""}
     </article>`;
   }).join("");

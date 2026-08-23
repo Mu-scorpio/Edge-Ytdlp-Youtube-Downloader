@@ -1,5 +1,15 @@
 const NATIVE_HOST = "com.local.ytdlp_downloader";
 const DEFAULTS = { ytDlpPath: "", outputDirectory: "", proxyUrl: "socks5h://127.0.0.1:7890", autoUseBrowserCookies: true, cookiesFilePath: "" };
+const DOWNLOAD_PRESET_LABELS = Object.freeze({
+  best: "最高质量",
+  2160: "2160p",
+  1440: "1440p",
+  1080: "1080p",
+  720: "720p",
+  480: "480p",
+  360: "360p",
+  audio: "仅音频"
+});
 const MAX_SAVED_TASKS = 30;
 const DEBUG_LOG_KEY = "debugLog";
 const MAX_DEBUG_ENTRIES = 120;
@@ -12,8 +22,21 @@ let bridgeDiagnosis = null;
 let bridgeYtDlp = "";
 let bridgeWaiters = [];
 const pendingInstall = new Map();
+const pendingFormatRequests = new Map();
 let debugQueue = Promise.resolve();
 const tasks = new Map();
+
+function normalizeDownloadPreset(value) {
+  const preset = String(value || "best").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(DOWNLOAD_PRESET_LABELS, preset)) return preset;
+  const match = /^height-(\d{3,4})$/.exec(preset);
+  const height = match ? Number(match[1]) : 0;
+  return height >= 144 && height <= 4320 ? `height-${height}` : "best";
+}
+
+function downloadPresetLabel(preset) {
+  return DOWNLOAD_PRESET_LABELS[preset] || `${preset.slice("height-".length)}p`;
+}
 const taskStoreReady = chrome.storage.local.get({ downloadTasks: [] }).then(({ downloadTasks }) => {
   const restored = downloadTasks.map((task) => {
     if (["connecting", "queued", "downloading"].includes(task.status)) {
@@ -137,6 +160,14 @@ function handleNativeMessage(message) {
     if (message.diagnosis) bridgeDiagnosis = message.diagnosis;
     chrome.runtime.sendMessage({ type: "install-update", result: message }).catch(() => {});
   }
+  if (message?.event === "formats-result") {
+    const requestId = message.requestId;
+    if (requestId && pendingFormatRequests.has(requestId)) {
+      const settle = pendingFormatRequests.get(requestId);
+      pendingFormatRequests.delete(requestId);
+      settle(message);
+    }
+  }
   if (message?.event === "bridge-error") {
     bridgeError = message.error || "本机桥接器内部错误";
     debug("native-bridge-error", { error: bridgeError });
@@ -165,6 +196,10 @@ function ensureNativePort() {
         settle({ ok: false, message: bridgeError, requestId: id });
       }
       pendingInstall.clear();
+      for (const [id, settle] of pendingFormatRequests) {
+        settle({ ok: false, error: bridgeError, requestId: id });
+      }
+      pendingFormatRequests.clear();
       nativePort = null;
       failActiveTasks(bridgeError).catch(() => {});
     });
@@ -237,12 +272,23 @@ async function startDownload(message) {
     autoBrowserCookies: settings.autoUseBrowserCookies,
     browserCookieCount: browserCookies.length,
     cookiesFileConfigured: Boolean(settings.cookiesFilePath),
-    subtitleTrack: message.subtitleTrack || null
+    subtitleTrack: message.subtitleTrack || null,
+    downloadPreset: normalizeDownloadPreset(message.downloadPreset)
   });
+  const downloadPreset = normalizeDownloadPreset(message.downloadPreset);
   const task = {
     id: taskId(),
     title: message.title || "YouTube video",
     url: message.url,
+    downloadPreset,
+    formatLabel: downloadPresetLabel(downloadPreset),
+    mediaType: downloadPreset === "audio" ? "audio" : "video",
+    videoProgress: downloadPreset === "audio" ? null : 0,
+    audioProgress: 0,
+    videoSpeed: "",
+    audioSpeed: "",
+    videoEta: "",
+    audioEta: "",
     outputDirectory: settings.outputDirectory || "默认：Edge 浏览器下载目录",
     status: "connecting",
     progress: 0,
@@ -270,6 +316,7 @@ async function startDownload(message) {
       taskId: task.id,
       title: task.title,
       url: task.url,
+      downloadPreset,
       subtitleTrack: message.subtitleTrack || null,
       ytDlpPath: settings.ytDlpPath.trim(),
       outputDirectory: settings.outputDirectory.trim(),
@@ -287,6 +334,51 @@ async function startDownload(message) {
     debug("download-post-failed", { taskId: task.id, error: task.error });
     return { ok: false, error: task.error };
   }
+}
+
+async function requestAvailableFormats(message) {
+  const settings = await chrome.storage.local.get(DEFAULTS);
+  const browserCookies = settings.autoUseBrowserCookies ? await readYouTubeCookies() : [];
+  const connected = await waitForBridge();
+  if (!connected || !nativePort) {
+    return { ok: false, error: bridgeError || "本机桥接器未响应" };
+  }
+
+  const requestId = taskId();
+  const resultPromise = new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingFormatRequests.delete(requestId);
+      resolve({ ok: false, error: "读取视频清晰度超时，请稍后重试" });
+    }, 90 * 1000);
+    pendingFormatRequests.set(requestId, (payload) => {
+      clearTimeout(timer);
+      resolve(payload);
+    });
+  });
+
+  try {
+    nativePort.postMessage({
+      action: "formats",
+      requestId,
+      url: message.url,
+      ytDlpPath: settings.ytDlpPath.trim(),
+      proxyUrl: normalizeProxyUrl(settings.proxyUrl),
+      useEdgeCookies: false,
+      cookiesFilePath: settings.cookiesFilePath.trim(),
+      browserCookies
+    });
+  } catch (error) {
+    pendingFormatRequests.delete(requestId);
+    return { ok: false, error: error.message || "无法读取视频清晰度" };
+  }
+
+  const result = await resultPromise;
+  return {
+    ok: Boolean(result.ok),
+    error: result.error || "",
+    heights: Array.isArray(result.heights) ? result.heights : [],
+    hasAudio: result.hasAudio !== false
+  };
 }
 
 async function requestDiagnosis() {
@@ -375,6 +467,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     debug("runtime-message", { type: message.type || "unknown" });
     if (message.type === "download") {
       sendResponse(await startDownload(message));
+      return;
+    }
+    if (message.type === "get-formats") {
+      sendResponse(await requestAvailableFormats(message));
       return;
     }
     if (message.type === "get-downloads") {

@@ -1,21 +1,43 @@
 const BUTTON_CLASS = "ytdlp-download-button";
 const SURFACE_ATTRIBUTE = "data-ytdlp-surface";
-const SUBTITLE_BRIDGE_SOURCE = "yt-dlp-edge-subtitle-bridge-v1";
+const SUBTITLE_BRIDGE_SOURCE = "yt-dlp-edge-page-bridge-v2";
+const DOWNLOAD_PRESETS = [
+  { id: "best", label: "最高质量", detail: "自动选择当前视频可用的最高画质" },
+  { id: "2160", label: "2160p", detail: "4K；若视频不提供将使用可用的较低画质" },
+  { id: "1440", label: "1440p", detail: "2K；若视频不提供将使用可用的较低画质" },
+  { id: "1080", label: "1080p", detail: "全高清；若视频不提供将使用可用的较低画质" },
+  { id: "720", label: "720p", detail: "高清；若视频不提供将使用可用的较低画质" },
+  { id: "480", label: "480p", detail: "标清；若视频不提供将使用可用的较低画质" },
+  { id: "360", label: "360p", detail: "省流；若视频不提供将使用可用的较低画质" },
+  { id: "audio", label: "仅音频", detail: "只下载音轨，不下载视频（按源格式保存）", audioOnly: true }
+];
 let toastElement;
 let toastHideTimer;
 let toastResetTimer;
 const taskPollers = new Map();
 const subtitleResolvers = new Map();
+const formatResolvers = new Map();
 let subtitleBridgePromise;
 let extensionContextAlive = true;
+let downloadDialogElement;
+let downloadDialogRequest;
+let lastDownloadPreset = "best";
 
 window.addEventListener("message", (event) => {
-  if (event.source !== window || event.data?.source !== SUBTITLE_BRIDGE_SOURCE
-      || event.data.type !== "active-subtitle-response") return;
-  const resolver = subtitleResolvers.get(event.data.requestId);
-  if (!resolver) return;
-  subtitleResolvers.delete(event.data.requestId);
-  resolver(event.data.track || null);
+  if (event.source !== window || event.data?.source !== SUBTITLE_BRIDGE_SOURCE) return;
+  if (event.data.type === "active-subtitle-response") {
+    const resolver = subtitleResolvers.get(event.data.requestId);
+    if (!resolver) return;
+    subtitleResolvers.delete(event.data.requestId);
+    resolver(event.data.track || null);
+    return;
+  }
+  if (event.data.type === "available-formats-response") {
+    const resolver = formatResolvers.get(event.data.requestId);
+    if (!resolver) return;
+    formatResolvers.delete(event.data.requestId);
+    resolver(event.data.formats || null);
+  }
 });
 
 function diagnostic(event, detail = {}) {
@@ -133,10 +155,26 @@ async function activeSubtitleTrack() {
   });
 }
 
-function setButtonState(button, state, label) {
-  button.dataset.downloadState = state;
-  button.setAttribute("aria-label", label);
-  button.setAttribute("title", label);
+async function activePageFormats() {
+  if (!await ensureSubtitleBridge()) return null;
+  const requestId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      formatResolvers.delete(requestId);
+      resolve(null);
+    }, 1500);
+    formatResolvers.set(requestId, (formats) => {
+      window.clearTimeout(timeout);
+      resolve(formats);
+    });
+    window.postMessage({ source: SUBTITLE_BRIDGE_SOURCE, type: "get-available-formats", requestId }, "*");
+  });
+}
+
+function setButtonState(button) {
+  button.removeAttribute("data-download-state");
+  button.setAttribute("aria-label", "使用 yt-dlp 下载");
+  button.setAttribute("title", "使用 yt-dlp 下载");
 }
 
 function readableError(error) {
@@ -156,6 +194,84 @@ function readableError(error) {
   return message;
 }
 
+function taskMediaType(task) {
+  return task.mediaType || (task.downloadPreset === "audio" ? "audio" : "video");
+}
+
+function taskProgressValue(value, fallback = 0) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return Math.min(100, Math.max(0, Math.round(fallback || 0)));
+  return Math.min(100, Math.max(0, Math.round(numeric)));
+}
+
+function taskProgressRows(task) {
+  const fallback = taskProgressValue(task.progress);
+  const fallbackSpeed = task.speed || "";
+  const fallbackEta = task.eta || "";
+  if (taskMediaType(task) === "audio") {
+    return [{
+      key: "audio",
+      label: "音频",
+      value: taskProgressValue(task.audioProgress, fallback),
+      speed: task.audioSpeed || fallbackSpeed,
+      eta: task.audioEta || fallbackEta
+    }];
+  }
+  return [
+    {
+      key: "video",
+      label: "视频",
+      value: taskProgressValue(task.videoProgress, fallback),
+      speed: task.videoSpeed || fallbackSpeed,
+      eta: task.videoEta || fallbackEta
+    },
+    {
+      key: "audio",
+      label: "音频",
+      value: taskProgressValue(task.audioProgress, task.status === "completed" ? fallback : 0),
+      speed: task.audioSpeed || fallbackSpeed,
+      eta: task.audioEta || fallbackEta
+    }
+  ];
+}
+
+function appendToastProgress(task) {
+  const progress = document.createElement("div");
+  progress.className = "ytdlp-download-toast__progress";
+  progress.setAttribute("aria-label", "下载进度");
+  for (const row of taskProgressRows(task)) {
+    const progressRow = document.createElement("div");
+    progressRow.className = "ytdlp-download-toast__progress-row";
+    const progressHead = document.createElement("div");
+    progressHead.className = "ytdlp-download-toast__progress-head";
+    const label = document.createElement("span");
+    label.className = "ytdlp-download-toast__progress-label";
+    label.textContent = row.label;
+    const metrics = document.createElement("span");
+    metrics.className = "ytdlp-download-toast__progress-metrics";
+    metrics.textContent = [row.speed, row.eta ? `剩余 ${row.eta}` : ""]
+      .filter(Boolean)
+      .join(" · ") || (task.status === "completed" ? "已完成" : "等待速度");
+    const value = document.createElement("span");
+    value.className = "ytdlp-download-toast__progress-value";
+    value.textContent = `${row.value}%`;
+    progressHead.append(label, metrics, value);
+    const track = document.createElement("div");
+    track.className = "ytdlp-download-toast__progress-track";
+    track.setAttribute("role", "progressbar");
+    track.setAttribute("aria-label", `${row.label}进度 ${row.value}%`);
+    track.setAttribute("aria-valuemin", "0");
+    track.setAttribute("aria-valuemax", "100");
+    track.setAttribute("aria-valuenow", String(row.value));
+    const fill = document.createElement("span");
+    fill.style.width = `${row.value}%`;
+    track.append(fill);
+    progressRow.append(progressHead, track);
+    progress.append(progressRow);
+  }
+  return progress;
+}
+
 function showToast(task) {
   window.clearTimeout(toastHideTimer);
   window.clearTimeout(toastResetTimer);
@@ -167,7 +283,7 @@ function showToast(task) {
   const status = {
     connecting: "正在连接本机下载器",
     queued: "已加入下载队列",
-    downloading: `正在下载 ${Math.round(task.progress || 0)}%`,
+    downloading: taskMediaType(task) === "video" ? "正在下载" : `正在下载 ${taskProgressRows(task)[0].value}%`,
     completed: "下载完成",
     error: "下载失败"
   }[task.status] || "下载状态已更新";
@@ -177,11 +293,14 @@ function showToast(task) {
   const title = document.createElement("span");
   title.textContent = task.title || "YouTube video";
   const detail = document.createElement("small");
-  detail.textContent = task.error
+  const taskDetail = task.error
     || (task.subtitleError ? `字幕下载未完成：${task.subtitleError}` : "")
     || task.outputDirectory
     || "";
-  toastElement.append(heading, title, detail);
+  detail.textContent = [task.formatLabel ? `下载：${task.formatLabel}` : "", taskDetail]
+    .filter(Boolean)
+    .join(" · ");
+  toastElement.append(heading, title, appendToastProgress(task), detail);
   toastElement.dataset.state = task.status;
   if (["completed", "error"].includes(task.status)) {
     const hideMs = task.status === "error" ? 12000 : 5000;
@@ -193,19 +312,10 @@ function showToast(task) {
 function applyTaskToButton(button, task) {
   if (!button?.isConnected) return;
   const active = ["connecting", "queued", "downloading"].includes(task.status);
-  const percent = Math.round(task.progress || 0);
   button.disabled = active;
-  button.style.setProperty("--download-progress", `${percent}%`);
-  const percentElement = button.querySelector(".ytdlp-download-button__percent");
-  if (percentElement) percentElement.textContent = task.status === "downloading" ? `${percent}%` : "";
-  const label = {
-    connecting: "正在连接本机下载器…",
-    queued: "已加入下载队列",
-    downloading: `正在下载：${percent}%`,
-    completed: `下载完成：${task.outputDirectory || ""}`,
-    error: `下载失败：${task.error || "未知错误"}`
-  }[task.status];
-  setButtonState(button, task.status, label || "使用 yt-dlp 下载");
+  button.toggleAttribute("aria-busy", active);
+  button.style.removeProperty("--download-progress");
+  setButtonState(button);
   if (["completed", "error"].includes(task.status)) {
     const poller = taskPollers.get(task.id);
     if (poller) {
@@ -244,6 +354,288 @@ function watchTask(button, id) {
   window.setTimeout(refreshTask, 120);
 }
 
+function validDownloadPreset(presetId, presets = DOWNLOAD_PRESETS) {
+  return presets.some((preset) => preset.id === presetId) ? presetId : "best";
+}
+
+function downloadPresetMark(preset) {
+  if (preset.audioOnly) return "音";
+  if (preset.id === "best") return "HQ";
+  const heightMatch = /^height-(\d+)$/.exec(preset.id);
+  const height = heightMatch ? heightMatch[1] : preset.id;
+  if (height === "2160") return "4K";
+  if (height === "1440") return "2K";
+  return height;
+}
+
+function buildAvailableDownloadPresets(heights) {
+  const availableHeights = [...new Set((Array.isArray(heights) ? heights : [])
+    .map((height) => Number(height))
+    .filter((height) => Number.isInteger(height) && height >= 144 && height <= 4320))]
+    .sort((left, right) => right - left);
+  if (!availableHeights.length) return DOWNLOAD_PRESETS;
+  return [
+    DOWNLOAD_PRESETS[0],
+    ...availableHeights.map((height) => ({
+      id: `height-${height}`,
+      label: `${height}p`,
+      detail: ""
+    })),
+    DOWNLOAD_PRESETS[DOWNLOAD_PRESETS.length - 1]
+  ];
+}
+
+function focusDownloadDialogElement(element) {
+  if (!element?.isConnected || typeof element.focus !== "function") return;
+  try { element.focus({ preventScroll: true }); } catch { element.focus(); }
+}
+
+function updateDownloadDialogSelection(presetId) {
+  if (!downloadDialogRequest || !downloadDialogElement) return;
+  const selected = validDownloadPreset(presetId, downloadDialogRequest.presets);
+  downloadDialogRequest.selectedPreset = selected;
+  downloadDialogElement.querySelectorAll(".ytdlp-download-dialog__option").forEach((option) => {
+    const active = option.dataset.preset === selected;
+    option.classList.toggle("is-selected", active);
+    option.setAttribute("aria-checked", String(active));
+  });
+}
+
+function closeDownloadDialog(presetId = null) {
+  const request = downloadDialogRequest;
+  if (!request) return;
+  const selectedPreset = presetId ? validDownloadPreset(presetId, request.presets) : null;
+  downloadDialogRequest = null;
+  if (downloadDialogElement) {
+    downloadDialogElement.hidden = true;
+    downloadDialogElement.setAttribute("aria-hidden", "true");
+  }
+  if (selectedPreset) lastDownloadPreset = selectedPreset;
+  request.resolve(selectedPreset);
+  focusDownloadDialogElement(request.previousFocus);
+}
+
+function renderDownloadDialogOptions(selectedPreset, presets = DOWNLOAD_PRESETS) {
+  const optionsElement = downloadDialogElement.querySelector(".ytdlp-download-dialog__options");
+  optionsElement.replaceChildren();
+  for (const preset of presets) {
+    if (preset.audioOnly) {
+      const divider = document.createElement("div");
+      divider.className = "ytdlp-download-dialog__divider";
+      divider.setAttribute("role", "separator");
+      optionsElement.append(divider);
+    }
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = `ytdlp-download-dialog__option${preset.audioOnly ? " is-audio" : ""}`;
+    option.dataset.preset = preset.id;
+    option.disabled = !downloadDialogRequest?.ready;
+    option.setAttribute("role", "radio");
+    option.setAttribute("aria-checked", String(preset.id === selectedPreset));
+
+    const mark = document.createElement("span");
+    mark.className = "ytdlp-download-dialog__option-mark";
+    mark.setAttribute("aria-hidden", "true");
+    mark.textContent = downloadPresetMark(preset);
+
+    const copy = document.createElement("span");
+    copy.className = "ytdlp-download-dialog__option-copy";
+    const label = document.createElement("strong");
+    label.textContent = preset.label;
+    copy.append(label);
+    const detail = document.createElement("small");
+    detail.textContent = preset.detail;
+    if (preset.detail) copy.append(detail);
+
+    const check = document.createElement("span");
+    check.className = "ytdlp-download-dialog__option-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = "✓";
+    option.append(mark, copy, check);
+    optionsElement.append(option);
+  }
+}
+
+function ensureDownloadDialog() {
+  if (downloadDialogElement?.isConnected) return downloadDialogElement;
+  const dialog = document.createElement("div");
+  dialog.className = "ytdlp-download-dialog";
+  dialog.hidden = true;
+  dialog.setAttribute("aria-hidden", "true");
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "ytdlp-download-dialog__backdrop";
+  backdrop.dataset.ytdlpDialogClose = "true";
+  backdrop.setAttribute("aria-hidden", "true");
+
+  const panel = document.createElement("section");
+  panel.className = "ytdlp-download-dialog__panel";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-labelledby", "ytdlp-download-dialog-title");
+  panel.tabIndex = -1;
+
+  const heading = document.createElement("header");
+  heading.className = "ytdlp-download-dialog__heading";
+  const headingCopy = document.createElement("div");
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "ytdlp-download-dialog__eyebrow";
+  eyebrow.textContent = "下载选项";
+  const title = document.createElement("h2");
+  title.id = "ytdlp-download-dialog-title";
+  title.textContent = "选择清晰度";
+  const videoTitle = document.createElement("p");
+  videoTitle.className = "ytdlp-download-dialog__video-title";
+  const availability = document.createElement("p");
+  availability.className = "ytdlp-download-dialog__availability";
+  availability.setAttribute("aria-live", "polite");
+  headingCopy.append(eyebrow, title, videoTitle, availability);
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "ytdlp-download-dialog__close";
+  close.dataset.ytdlpDialogClose = "true";
+  close.setAttribute("aria-label", "关闭下载选项");
+  close.textContent = "关闭";
+  heading.append(headingCopy, close);
+
+  const options = document.createElement("div");
+  options.className = "ytdlp-download-dialog__options";
+  options.setAttribute("role", "radiogroup");
+  options.setAttribute("aria-label", "下载清晰度");
+
+  const footer = document.createElement("footer");
+  footer.className = "ytdlp-download-dialog__footer";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "ytdlp-download-dialog__cancel";
+  cancel.dataset.ytdlpDialogClose = "true";
+  cancel.textContent = "取消";
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.className = "ytdlp-download-dialog__confirm";
+  confirm.disabled = true;
+  confirm.textContent = "开始下载";
+  footer.append(cancel, confirm);
+
+  panel.append(heading, options, footer);
+  dialog.append(backdrop, panel);
+  (document.documentElement || document.body).append(dialog);
+
+  dialog.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const target = event.target instanceof Element ? event.target : null;
+    const option = target?.closest(".ytdlp-download-dialog__option");
+    if (option) {
+      updateDownloadDialogSelection(option.dataset.preset);
+      return;
+    }
+    if (target?.closest("[data-ytdlp-dialog-close]")) {
+      closeDownloadDialog();
+      return;
+    }
+    if (target?.closest(".ytdlp-download-dialog__confirm")) {
+      if (!downloadDialogRequest?.ready) return;
+      closeDownloadDialog(downloadDialogRequest?.selectedPreset || "best");
+    }
+  });
+  dialog.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (!downloadDialogRequest) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDownloadDialog();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...panel.querySelectorAll("button:not([disabled])")];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      focusDownloadDialogElement(last);
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      focusDownloadDialogElement(first);
+    }
+  });
+  downloadDialogElement = dialog;
+  return dialog;
+}
+
+async function readAvailableDownloadHeights(video) {
+  const currentVideoId = currentWatchVideoId();
+  const targetVideoId = videoIdOf(video);
+  if (currentVideoId && currentVideoId === targetVideoId) {
+    let playerFormats = null;
+    try { playerFormats = await activePageFormats(); } catch { playerFormats = null; }
+    if (Array.isArray(playerFormats?.heights) && playerFormats.heights.length) {
+      return playerFormats.heights;
+    }
+  }
+  const result = await safeRuntimeMessage({ type: "get-formats", url: video?.url });
+  return result?.ok && Array.isArray(result.heights) ? result.heights : [];
+}
+
+function requestDownloadPreset(video, button) {
+  const dialog = ensureDownloadDialog();
+  if (downloadDialogRequest) closeDownloadDialog();
+  const initialPresets = DOWNLOAD_PRESETS;
+  const selectedPreset = validDownloadPreset(lastDownloadPreset, initialPresets);
+  const videoTitle = dialog.querySelector(".ytdlp-download-dialog__video-title");
+  const availability = dialog.querySelector(".ytdlp-download-dialog__availability");
+  const confirm = dialog.querySelector(".ytdlp-download-dialog__confirm");
+  videoTitle.textContent = video?.title || "YouTube video";
+  availability.textContent = "正在读取当前视频的可用清晰度…";
+  confirm.disabled = true;
+  renderDownloadDialogOptions(selectedPreset, initialPresets);
+  dialog.hidden = false;
+  dialog.setAttribute("aria-hidden", "false");
+  let request;
+  const selectionPromise = new Promise((resolve) => {
+    request = {
+      resolve,
+      selectedPreset,
+      presets: initialPresets,
+      ready: false,
+      previousFocus: document.activeElement || button
+    };
+    downloadDialogRequest = request;
+    window.setTimeout(() => {
+      focusDownloadDialogElement(dialog.querySelector(`.ytdlp-download-dialog__option[data-preset="${selectedPreset}"]`));
+    }, 0);
+  });
+
+  readAvailableDownloadHeights(video).then((heights) => {
+    if (downloadDialogRequest !== request) return;
+    const hasFormats = heights.length > 0;
+    const presets = hasFormats ? buildAvailableDownloadPresets(heights) : initialPresets;
+    const selected = validDownloadPreset(lastDownloadPreset, presets);
+    request.presets = presets;
+    request.selectedPreset = selected;
+    request.ready = true;
+    renderDownloadDialogOptions(selected, presets);
+    updateDownloadDialogSelection(selected);
+    confirm.disabled = false;
+    const availableHeightCount = presets.filter((preset) => /^height-\d+$/.test(preset.id)).length;
+    availability.textContent = hasFormats
+      ? `已读取 ${availableHeightCount} 种当前可用清晰度`
+      : "未能读取当前格式，显示常用清晰度选项";
+    window.setTimeout(() => {
+      focusDownloadDialogElement(dialog.querySelector(`.ytdlp-download-dialog__option[data-preset="${selected}"]`));
+    }, 0);
+  }).catch(() => {
+    if (downloadDialogRequest !== request) return;
+    request.presets = initialPresets;
+    request.ready = true;
+    renderDownloadDialogOptions(selectedPreset, initialPresets);
+    updateDownloadDialogSelection(selectedPreset);
+    confirm.disabled = false;
+    availability.textContent = "未能读取当前格式，显示常用清晰度选项";
+  });
+  return selectionPromise;
+}
+
 function createDownloadButton(getVideoInfo, surface, videoId = "") {
   const button = document.createElement("button");
   button.type = "button";
@@ -260,18 +652,21 @@ function createDownloadButton(getVideoInfo, surface, videoId = "") {
   const path = document.createElementNS(svgNamespace, "path");
   path.setAttribute("d", "M19 9h-4V3H9v6H5l7 7 7-7Zm-14 9v2h14v-2H5Z");
   icon.append(path);
-  const percent = document.createElement("span");
-  percent.className = "ytdlp-download-button__percent";
-  button.append(icon, percent);
+  button.append(icon);
   if (videoId) button.dataset.videoId = videoId;
 
   button.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (button.dataset.dialogPending === "true") return;
+    button.dataset.dialogPending = "true";
     let video;
     try {
       video = await getVideoInfo();
-      if (!video) return;
+      if (!video) {
+        delete button.dataset.dialogPending;
+        return;
+      }
 
       diagnostic("download-button-clicked", {
         surface,
@@ -279,9 +674,16 @@ function createDownloadButton(getVideoInfo, surface, videoId = "") {
         subtitleTrack: video.subtitleTrack || null
       });
 
-      setButtonState(button, "pending", "正在加入 yt-dlp 下载队列…");
+      const downloadPreset = await requestDownloadPreset(video, button);
+      if (!downloadPreset) {
+        delete button.dataset.dialogPending;
+        return;
+      }
+      diagnostic("download-preset-selected", { surface, downloadPreset });
+      delete button.dataset.dialogPending;
       button.disabled = true;
-      const result = await safeRuntimeMessage({ type: "download", ...video });
+      button.setAttribute("aria-busy", "true");
+      const result = await safeRuntimeMessage({ type: "download", ...video, downloadPreset });
       if (!result) throw new Error("扩展已更新，请刷新此 YouTube 页面后重试");
       if (!result?.ok) throw new Error(result?.error || "无法加入下载队列");
       diagnostic("download-message-response", { ok: true, surface, taskId: result.task.id });
@@ -296,8 +698,10 @@ function createDownloadButton(getVideoInfo, surface, videoId = "") {
     } catch (error) {
       const message = readableError(error);
       diagnostic("download-message-error", { error: message, surface });
+      delete button.dataset.dialogPending;
       button.disabled = false;
-      setButtonState(button, "error", `下载失败：${message}`);
+      button.removeAttribute("aria-busy");
+      setButtonState(button);
       showToast({ status: "error", title: video?.title, error: message });
     }
   });
@@ -389,13 +793,11 @@ function resetButtonState(button) {
     taskPollers.delete(taskId);
   }
   button.disabled = false;
+  button.removeAttribute("aria-busy");
   delete button.dataset.downloadState;
   delete button.dataset.taskId;
   button.style.removeProperty("--download-progress");
-  const percentElement = button.querySelector(".ytdlp-download-button__percent");
-  if (percentElement) percentElement.textContent = "";
-  button.setAttribute("aria-label", "使用 yt-dlp 下载");
-  button.title = "使用 yt-dlp 下载";
+  setButtonState(button);
 }
 
 function resetStaleButtons() {
@@ -433,8 +835,9 @@ if (document.documentElement) {
   document.addEventListener("DOMContentLoaded", startContentScript, { once: true });
 }
 
+document.addEventListener("yt-navigate-start", () => closeDownloadDialog());
 document.addEventListener("yt-navigate-finish", scanCurrentPage);
-window.addEventListener("popstate", scanCurrentPage);
+window.addEventListener("popstate", () => { closeDownloadDialog(); scanCurrentPage(); });
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type !== "download-update" || !message.task) return;

@@ -18,8 +18,17 @@ h2 { font-size: 13px; margin: 0; }
 .task__state.error { color: #b3261e; }.task__state.completed { color: #08783f; }
 .progress { background: color-mix(in srgb, CanvasText 14%, Canvas); border-radius: 2px; height: 3px; margin: 9px 0 7px; overflow: hidden; }
 .progress > span { background: #0f9d58; display: block; height: 100%; transition: width .25s ease; }
+.progress-stack { display: grid; gap: 6px; margin: 9px 0 7px; }
+.progress-row { display: grid; gap: 4px; }
+.progress-row__head { align-items: center; display: grid; gap: 6px; grid-template-columns: 32px minmax(0, 1fr) 34px; }
+.progress-row .progress { margin: 0; }
+.progress-row__label, .progress-row__metrics, .progress-row__value { color: color-mix(in srgb, CanvasText 66%, Canvas); font-size: 10px; line-height: 1; }
+.progress-row__metrics { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress-row__value { text-align: right; }
+.progress-row:nth-child(2) .progress > span { background: #065fd4; }
 .task.error .progress > span { background: #b3261e; }
 .task__meta { color: color-mix(in srgb, CanvasText 62%, Canvas); font-size: 11px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task__meta.format { color: color-mix(in srgb, CanvasText 78%, Canvas); margin-bottom: 3px; }
 .task__meta.multi { white-space: pre-wrap; overflow: visible; text-overflow: unset; max-height: 7.5em; overflow-y: auto; }
 .task__meta.path { color: color-mix(in srgb, CanvasText 75%, Canvas); margin-top: 3px; }
 .deps { border-top: 1px solid color-mix(in srgb, CanvasText 13%, Canvas); margin-top: 14px; padding-top: 12px; }

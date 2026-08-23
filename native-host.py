@@ -15,8 +15,18 @@ from urllib.parse import urlparse
 
 WRITE_LOCK = threading.Lock()
 LOG_PATH = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "YT-DLP-Edge" / "bridge.log"
-BRIDGE_VERSION = "1.4.2"
+BRIDGE_VERSION = "1.4.3"
 INSTALL_LOCK = threading.Lock()
+DOWNLOAD_PRESETS = {
+    "best": {"label": "最高质量", "format": "bestvideo*+bestaudio/best", "audio_only": False},
+    "2160": {"label": "2160p", "format": "bestvideo[height<=2160]+bestaudio/best[height<=2160]", "audio_only": False},
+    "1440": {"label": "1440p", "format": "bestvideo[height<=1440]+bestaudio/best[height<=1440]", "audio_only": False},
+    "1080": {"label": "1080p", "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]", "audio_only": False},
+    "720": {"label": "720p", "format": "bestvideo[height<=720]+bestaudio/best[height<=720]", "audio_only": False},
+    "480": {"label": "480p", "format": "bestvideo[height<=480]+bestaudio/best[height<=480]", "audio_only": False},
+    "360": {"label": "360p", "format": "bestvideo[height<=360]+bestaudio/best[height<=360]", "audio_only": False},
+    "audio": {"label": "仅音频", "format": "bestaudio", "audio_only": True},
+}
 
 
 def log(message):
@@ -407,6 +417,31 @@ def normalize_subtitle_track(value):
     return {"languageCode": language_code, "kind": kind}
 
 
+def normalize_download_preset(value):
+    """Accept only the format presets exposed by the page dialog."""
+    preset = str(value or "best").strip().lower()
+    if preset in DOWNLOAD_PRESETS:
+        return preset
+    match = re.fullmatch(r"height-(\d{3,4})", preset)
+    height = int(match.group(1)) if match else 0
+    return preset if 144 <= height <= 4320 else "best"
+
+
+def download_profile_for_preset(preset):
+    """Build a validated height-capped profile for dynamically probed formats."""
+    if preset in DOWNLOAD_PRESETS:
+        return DOWNLOAD_PRESETS[preset]
+    match = re.fullmatch(r"height-(\d{3,4})", str(preset or ""))
+    height = int(match.group(1)) if match else 0
+    if not 144 <= height <= 4320:
+        return DOWNLOAD_PRESETS["best"]
+    return {
+        "label": f"{height}p",
+        "format": f"bestvideo[height<={height}]+bestaudio/best[height<={height}]",
+        "audio_only": False,
+    }
+
+
 def emit_task(task):
     task["updatedAt"] = int(time.time() * 1000)
     write_message({"event": "task", "task": task.copy()})
@@ -426,6 +461,103 @@ def decode_process_line(value):
     return value.decode("utf-8", errors="replace")
 
 
+def codec_is_present(value):
+    """Return whether a yt-dlp codec field identifies a real media stream."""
+    return str(value or "").strip().lower() not in {"", "na", "none", "unknown"}
+
+
+def progress_stream_kind(video_codec, audio_codec):
+    """Classify a progress event as video, audio, or a combined media file."""
+    has_video = codec_is_present(video_codec)
+    has_audio = codec_is_present(audio_codec)
+    if has_video and has_audio:
+        return "combined"
+    if has_audio:
+        return "audio"
+    return "video"
+
+
+def format_download_speed(value):
+    """Format yt-dlp's bytes-per-second value for the task UI."""
+    raw = str(value or "").strip()
+    if raw.lower() in {"", "na", "none", "unknown"}:
+        return ""
+    try:
+        speed = float(raw)
+    except (TypeError, ValueError):
+        return raw
+    if speed < 1024:
+        return f"{speed:.0f} B/s"
+    units = ("KiB/s", "MiB/s", "GiB/s", "TiB/s")
+    scaled = speed
+    for unit in units:
+        scaled /= 1024
+        if scaled < 1024 or unit == units[-1]:
+            return f"{scaled:.1f} {unit}" if scaled < 10 else f"{scaled:.0f} {unit}"
+    return ""
+
+
+def format_download_eta(value):
+    """Format yt-dlp's ETA seconds as a compact human-readable duration."""
+    raw = str(value or "").strip()
+    if raw.lower() in {"", "na", "none", "unknown", "inf", "infinite"}:
+        return ""
+    try:
+        seconds = max(0, int(float(raw)))
+    except (TypeError, ValueError):
+        return raw
+    if seconds < 60:
+        return f"00:{seconds:02d}"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes:02d}:{seconds:02d}"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def update_media_progress(task, stream_kind, progress, speed, eta):
+    """Store per-stream progress while keeping a compatibility overall value."""
+    media_type = task.get("mediaType", "video")
+    if media_type == "audio":
+        task["audioProgress"] = progress
+        task["audioSpeed"] = speed
+        task["audioEta"] = eta
+        task["progress"] = progress
+        task["speed"] = speed
+        task["eta"] = eta
+        return
+
+    if stream_kind == "audio":
+        task["audioProgress"] = progress
+        task["audioSpeed"] = speed
+        task["audioEta"] = eta
+    elif stream_kind == "combined":
+        task["videoProgress"] = progress
+        task["audioProgress"] = progress
+        task["videoSpeed"] = speed
+        task["audioSpeed"] = speed
+        task["videoEta"] = eta
+        task["audioEta"] = eta
+    else:
+        task["videoProgress"] = progress
+        task["videoSpeed"] = speed
+        task["videoEta"] = eta
+
+    video_progress = task.get("videoProgress")
+    audio_progress = task.get("audioProgress")
+    if video_progress is not None and audio_progress is not None:
+        candidate_progress = round((video_progress + audio_progress) / 2, 1)
+    elif video_progress is not None:
+        candidate_progress = video_progress
+    elif audio_progress is not None:
+        candidate_progress = audio_progress
+    else:
+        candidate_progress = task.get("progress") or 0
+    task["progress"] = max(float(task.get("progress") or 0), candidate_progress)
+    task["speed"] = speed
+    task["eta"] = eta
+
+
 def run_download(task, command, subtitle_command=None, temporary_cookie_file=None):
     last_output = []
     try:
@@ -440,12 +572,32 @@ def run_download(task, command, subtitle_command=None, temporary_cookie_file=Non
         emit_task(task)
         for line in process.stdout:
             text = decode_process_line(line).strip()
-            if text.startswith("YT_DLP_PROGRESS:"):
+            if text.startswith("YT_DLP_PROGRESS|"):
+                parts = text.split("|", 5)
+                if len(parts) >= 6:
+                    _, percent, speed, eta, video_codec, audio_codec = parts
+                elif len(parts) == 5:
+                    _, percent, eta, video_codec, audio_codec = parts
+                    speed = ""
+                else:
+                    continue
+                match = re.search(r"\d+(?:\.\d+)?", percent)
+                if match:
+                    progress = min(100, max(0, float(match.group())))
+                    update_media_progress(
+                        task,
+                        progress_stream_kind(video_codec, audio_codec),
+                        progress,
+                        format_download_speed(speed),
+                        format_download_eta(eta),
+                    )
+                emit_task(task)
+            elif text.startswith("YT_DLP_PROGRESS:"):
                 _, percent, eta = text.split(":", 2)
                 match = re.search(r"\d+(?:\.\d+)?", percent)
                 if match:
-                    task["progress"] = min(100, max(0, float(match.group())))
-                task["eta"] = "" if eta == "NA" else eta
+                    progress = min(100, max(0, float(match.group())))
+                    update_media_progress(task, "video", progress, "", format_download_eta(eta))
                 emit_task(task)
             elif text.startswith("YT_DLP_FILE:"):
                 task["filePath"] = text.removeprefix("YT_DLP_FILE:")
@@ -486,6 +638,19 @@ def run_download(task, command, subtitle_command=None, temporary_cookie_file=Non
                 task["subtitleStatus"] = "skipped"
             task["status"] = "completed"
             task["progress"] = 100
+            if task.get("mediaType") == "audio":
+                task["audioProgress"] = 100
+                task["audioSpeed"] = ""
+                task["audioEta"] = ""
+            else:
+                task["videoProgress"] = 100
+                task["audioProgress"] = 100
+                task["videoSpeed"] = ""
+                task["audioSpeed"] = ""
+                task["videoEta"] = ""
+                task["audioEta"] = ""
+            task["speed"] = ""
+            task["eta"] = ""
             task.pop("error", None)
         else:
             raw = last_output[-1] if last_output else f"yt-dlp exited with code {exit_code}"
@@ -524,6 +689,120 @@ def ensure_ytdlp_ready(configured_path, auto_install=True):
         return resolve_ytdlp(configured_path)
 
 
+def parse_info_json(output):
+    """Extract yt-dlp's JSON object even when warnings precede it."""
+    decoder = json.JSONDecoder()
+    text = output or ""
+    for match in re.finditer(r"\{", text):
+        try:
+            value, _ = decoder.raw_decode(text[match.start():])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and isinstance(value.get("formats"), list):
+            return value
+    return None
+
+
+def probe_formats(message):
+    """Read available video heights without downloading the media."""
+    url = message.get("url", "")
+    if not isinstance(url, str) or not is_youtube_video_url(url):
+        raise ValueError("仅支持标准 YouTube 视频链接，无法读取清晰度。")
+    yt_dlp_cmd = ensure_ytdlp_ready(message.get("ytDlpPath", ""), auto_install=True)
+    option_block = [
+        "--ignore-config", "--no-playlist", "--windows-filenames", "--newline",
+        "--js-runtimes", "node", "--remote-components", "ejs:github",
+        "--legacy-server-connect", "--socket-timeout", "20",
+        "--retries", "3", "--fragment-retries", "3", "--extractor-retries", "2",
+    ]
+    command = [
+        *yt_dlp_cmd, *option_block, "--skip-download", "--dump-single-json", "--no-warnings", url,
+    ]
+    launcher_len = len(yt_dlp_cmd)
+
+    def inject_after_launcher(extra):
+        command[launcher_len:launcher_len] = extra
+
+    proxy_url = str(message.get("proxyUrl") or "").strip()
+    if re.fullmatch(r"http://(?:127\.0\.0\.1|localhost):7890/?", proxy_url, re.IGNORECASE):
+        proxy_url = "socks5h://127.0.0.1:7890"
+    if proxy_url:
+        inject_after_launcher(["--proxy", proxy_url])
+
+    cookies_file_path = str(message.get("cookiesFilePath") or "").strip()
+    browser_cookies = message.get("browserCookies") or []
+    if cookies_file_path:
+        cookie_path = Path(cookies_file_path).expanduser()
+        if not cookie_path.is_file():
+            raise ValueError(f"备用 cookies.txt 不存在: {cookie_path}")
+        inject_after_launcher(["--cookies", str(cookie_path)])
+    elif browser_cookies:
+        temporary_cookie_file = write_browser_cookies(browser_cookies)
+        inject_after_launcher(["--cookies", str(temporary_cookie_file)])
+    else:
+        temporary_cookie_file = None
+        if message.get("useEdgeCookies", True):
+            inject_after_launcher(["--cookies-from-browser", "edge"])
+
+    def strip_cookie_options(value):
+        stripped = []
+        skip_next = False
+        for item in value:
+            if skip_next:
+                skip_next = False
+                continue
+            if item in {"--cookies", "--cookies-from-browser"}:
+                skip_next = True
+                continue
+            stripped.append(item)
+        return stripped
+
+    def run_format_probe(probe_command):
+        exit_code, output = run_capture(probe_command, timeout=120)
+        if exit_code != 0:
+            raise ValueError(humanize_error(output or f"yt-dlp exited with code {exit_code}"))
+        info = parse_info_json(output)
+        if not info:
+            raise ValueError("yt-dlp 未返回可解析的清晰度信息。")
+        return info
+
+    try:
+        try:
+            info = run_format_probe(command)
+        except ValueError:
+            can_retry_without_cookies = bool(browser_cookies) or (
+                not cookies_file_path and bool(message.get("useEdgeCookies", False))
+            )
+            if not can_retry_without_cookies:
+                raise
+            log("Format probe with browser cookies failed; retrying without cookies")
+            info = run_format_probe(strip_cookie_options(command))
+        heights = set()
+        has_audio = False
+        for item in info.get("formats", []):
+            if not isinstance(item, dict):
+                continue
+            if codec_is_present(item.get("acodec")):
+                has_audio = True
+            video_codec = str(item.get("vcodec") or "").lower()
+            format_id = str(item.get("format_id") or "").lower()
+            if format_id.startswith("sb") or video_codec == "mjpeg" or not codec_is_present(video_codec):
+                continue
+            try:
+                height = int(item.get("height"))
+            except (TypeError, ValueError):
+                continue
+            if 144 <= height <= 4320:
+                heights.add(height)
+        return {"ok": True, "heights": sorted(heights, reverse=True), "hasAudio": has_audio}
+    finally:
+        if browser_cookies and "temporary_cookie_file" in locals() and temporary_cookie_file:
+            try:
+                Path(temporary_cookie_file).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def queue_download(message):
     url = message.get("url", "")
     if not isinstance(url, str) or not is_youtube_video_url(url):
@@ -533,6 +812,8 @@ def queue_download(message):
             f"收到: {url or '(空)'}"
         )
     yt_dlp_cmd = ensure_ytdlp_ready(message.get("ytDlpPath", ""), auto_install=True)
+    download_preset = normalize_download_preset(message.get("downloadPreset"))
+    download_profile = download_profile_for_preset(download_preset)
 
     # Soft-check optional tools and log; node is strongly recommended
     diagnosis = diagnose_dependencies(message.get("ytDlpPath", ""))
@@ -562,6 +843,12 @@ def queue_download(message):
         )
     task = {
         "id": message["taskId"], "title": message.get("title") or "YouTube video", "url": url,
+        "downloadPreset": download_preset, "formatLabel": download_profile["label"],
+        "mediaType": "audio" if download_profile["audio_only"] else "video",
+        "videoProgress": None if download_profile["audio_only"] else 0,
+        "audioProgress": 0,
+        "videoSpeed": "", "audioSpeed": "",
+        "videoEta": "", "audioEta": "",
         "outputDirectory": str(output_dir), "status": "queued", "progress": 0,
         "createdAt": int(time.time() * 1000), "updatedAt": int(time.time() * 1000),
     }
@@ -583,13 +870,13 @@ def queue_download(message):
         command[launcher_len:launcher_len] = extra
 
     command = [
-        *yt_dlp_cmd, *option_block, "--progress",
-        "--progress-template", "download:YT_DLP_PROGRESS:%(progress._percent_str)s:%(progress.eta)s",
+        *yt_dlp_cmd, *option_block, "--format", download_profile["format"], "--progress",
+        "--progress-template", "download:YT_DLP_PROGRESS|%(progress._percent_str)s|%(progress.speed)s|%(progress.eta)s|%(info.vcodec)s|%(info.acodec)s",
         "--print", "after_move:YT_DLP_FILE:%(filepath)s", "-P", str(output_dir), url,
     ]
     subtitle_track = normalize_subtitle_track(message.get("subtitleTrack"))
     subtitle_command = None
-    if subtitle_track:
+    if subtitle_track and not download_profile["audio_only"]:
         subtitle_flag = "--write-auto-subs" if subtitle_track["kind"] == "asr" else "--write-subs"
         subtitle_command = [
             *yt_dlp_cmd, *option_block, "--skip-download", subtitle_flag,
@@ -612,9 +899,9 @@ def queue_download(message):
             inject_after_launcher(candidate, ["--cookies-from-browser", "edge"])
     subtitle_summary = "none"
     if subtitle_track:
-        subtitle_summary = f"{subtitle_track['languageCode']}/{subtitle_track['kind']}"
+        subtitle_summary = "skipped-audio" if download_profile["audio_only"] else f"{subtitle_track['languageCode']}/{subtitle_track['kind']}"
     log(
-        f"Queued task {task['id']} (output={output_dir}, subtitles={subtitle_summary}, "
+        f"Queued task {task['id']} (output={output_dir}, preset={download_preset}, subtitles={subtitle_summary}, "
         f"proxy={bool(proxy_url)}, cookiesFile={bool(cookies_file_path)}, "
         f"browserCookies={len(browser_cookies)}, "
         f"edgeCookies={use_edge_cookies and not cookies_file_path and not browser_cookies}, "
@@ -669,6 +956,26 @@ def main():
                             "requestId": message.get("requestId"),
                         })
                 threading.Thread(target=worker, daemon=True).start()
+            elif action == "formats":
+                def format_worker():
+                    try:
+                        result = probe_formats(message)
+                        write_message({
+                            "event": "formats-result",
+                            "ok": result["ok"],
+                            "heights": result["heights"],
+                            "hasAudio": result["hasAudio"],
+                            "requestId": message.get("requestId"),
+                        })
+                    except Exception as error:
+                        log(f"format probe error: {error}")
+                        write_message({
+                            "event": "formats-result",
+                            "ok": False,
+                            "error": humanize_error(str(error)),
+                            "requestId": message.get("requestId"),
+                        })
+                threading.Thread(target=format_worker, daemon=True).start()
             elif action == "download":
                 try:
                     queue_download(message)
