@@ -13,6 +13,15 @@ function showMessage(text, type = "") {
   message.className = type;
 }
 
+function fallbackSetupCommand() {
+  const userAgent = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+  if (/Macintosh|Mac OS X/i.test(userAgent)) {
+    const browser = /\bEdg\//i.test(userAgent) ? "edge" : "chrome";
+    return `./setup-native-host.sh ${chrome.runtime.id} --browser ${browser}`;
+  }
+  return `setup-native-host.bat ${chrome.runtime.id}`;
+}
+
 async function restoreSettings() {
   const settings = await chrome.storage.local.get({ ytDlpPath: "", outputDirectory: "", proxyUrl: "socks5h://127.0.0.1:7890", autoUseBrowserCookies: true, cookiesFilePath: "" });
   if (/^http:\/\/(?:127\.0\.0\.1|localhost):7890\/?$/i.test(settings.proxyUrl)) {
@@ -29,10 +38,10 @@ async function restoreSettings() {
 async function loadSetupInfo() {
   try {
     const info = await chrome.runtime.sendMessage({ type: "get-setup-info" });
-    const command = info?.setupCommand || `setup-native-host.bat ${chrome.runtime.id}`;
+    const command = info?.setupCommand || fallbackSetupCommand();
     setupCommand.textContent = command;
   } catch {
-    setupCommand.textContent = `setup-native-host.bat ${chrome.runtime.id}`;
+    setupCommand.textContent = fallbackSetupCommand();
   }
 }
 

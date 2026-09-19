@@ -13,6 +13,21 @@ const DOWNLOAD_PRESET_LABELS = Object.freeze({
 const MAX_SAVED_TASKS = 30;
 const DEBUG_LOG_KEY = "debugLog";
 const MAX_DEBUG_ENTRIES = 120;
+const DEFAULT_DOWNLOAD_PRESET = "1080";
+const USER_AGENT = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+const IS_MACOS = /Macintosh|Mac OS X/i.test(USER_AGENT);
+const BROWSER_NAME = /\bEdg\//i.test(USER_AGENT) ? "edge" : "chrome";
+const BROWSER_LABEL = BROWSER_NAME === "edge" ? "Edge" : "Chrome";
+
+function setupCommand() {
+  return IS_MACOS
+    ? `./setup-native-host.sh ${chrome.runtime.id} --browser ${BROWSER_NAME}`
+    : `setup-native-host.bat ${chrome.runtime.id}`;
+}
+
+function extensionsPage() {
+  return BROWSER_NAME === "edge" ? "edge://extensions" : "chrome://extensions";
+}
 
 let nativePort = null;
 let bridgeError = "";
@@ -22,20 +37,17 @@ let bridgeDiagnosis = null;
 let bridgeYtDlp = "";
 let bridgeWaiters = [];
 const pendingInstall = new Map();
-const pendingFormatRequests = new Map();
 let debugQueue = Promise.resolve();
 const tasks = new Map();
 
 function normalizeDownloadPreset(value) {
-  const preset = String(value || "best").trim().toLowerCase();
+  const preset = String(value || DEFAULT_DOWNLOAD_PRESET).trim().toLowerCase();
   if (Object.prototype.hasOwnProperty.call(DOWNLOAD_PRESET_LABELS, preset)) return preset;
-  const match = /^height-(\d{3,4})$/.exec(preset);
-  const height = match ? Number(match[1]) : 0;
-  return height >= 144 && height <= 4320 ? `height-${height}` : "best";
+  return DEFAULT_DOWNLOAD_PRESET;
 }
 
 function downloadPresetLabel(preset) {
-  return DOWNLOAD_PRESET_LABELS[preset] || `${preset.slice("height-".length)}p`;
+  return DOWNLOAD_PRESET_LABELS[preset] || DOWNLOAD_PRESET_LABELS[DEFAULT_DOWNLOAD_PRESET];
 }
 const taskStoreReady = chrome.storage.local.get({ downloadTasks: [] }).then(({ downloadTasks }) => {
   const restored = downloadTasks.map((task) => {
@@ -71,18 +83,18 @@ function explainBridgeDisconnect(raw) {
   if (!message) {
     return (
       "本机桥接器已断开。\n" +
-      "请在扩展目录运行: setup-native-host.bat " + chrome.runtime.id + "\n" +
-      "然后在 edge://extensions 重新加载扩展。"
+      "请在扩展目录运行: " + setupCommand() + "\n" +
+      `然后在 ${extensionsPage()} 重新加载扩展。`
     );
   }
   if (/Specified native messaging host not found|host not found/i.test(message) || lower.includes("not found")) {
     return (
       "未找到本机桥接器（Native Messaging Host）。\n" +
       "新设备需要先注册桥接：\n" +
-      "1. 在扩展目录打开 PowerShell\n" +
-      "2. 运行 setup-native-host.bat " + chrome.runtime.id + "\n" +
-      "3. 脚本会自动安装缺失的 yt-dlp / Node / FFmpeg（若可用 winget）\n" +
-      "4. 在 edge://extensions 重新加载扩展并刷新 YouTube 页面\n" +
+      `1. 在扩展目录打开终端\n` +
+      `2. 运行 ${setupCommand()}\n` +
+      `3. 脚本会自动安装缺失的 yt-dlp / Node / FFmpeg（若可用包管理器）\n` +
+      `4. 在 ${extensionsPage()} 重新加载扩展并刷新 YouTube 页面\n` +
       `原始错误: ${message}`
     );
   }
@@ -90,7 +102,7 @@ function explainBridgeDisconnect(raw) {
     return (
       "本机桥接器拒绝连接（扩展 ID 不匹配）。\n" +
       "请用当前扩展 ID 重新注册：\n" +
-      "setup-native-host.bat " + chrome.runtime.id + "\n" +
+      setupCommand() + "\n" +
       `原始错误: ${message}`
     );
   }
@@ -98,11 +110,11 @@ function explainBridgeDisconnect(raw) {
     return (
       "本机桥接进程异常退出。\n" +
       "常见原因：Python 路径失效、native-host.py 被移动、或启动器损坏。\n" +
-      "请重新运行 setup-native-host.bat，并查看 %LOCALAPPDATA%\\YT-DLP-Edge\\bridge.log\n" +
+      `请重新运行 ${setupCommand()}，并查看桥接日志\n` +
       `原始错误: ${message}`
     );
   }
-  return `${message}\n若刚换电脑或移动了扩展目录，请重新运行 setup-native-host.bat。`;
+  return `${message}\n若刚换电脑或移动了扩展目录，请重新运行 ${setupCommand()}。`;
 }
 
 async function persistTasks() {
@@ -160,14 +172,6 @@ function handleNativeMessage(message) {
     if (message.diagnosis) bridgeDiagnosis = message.diagnosis;
     chrome.runtime.sendMessage({ type: "install-update", result: message }).catch(() => {});
   }
-  if (message?.event === "formats-result") {
-    const requestId = message.requestId;
-    if (requestId && pendingFormatRequests.has(requestId)) {
-      const settle = pendingFormatRequests.get(requestId);
-      pendingFormatRequests.delete(requestId);
-      settle(message);
-    }
-  }
   if (message?.event === "bridge-error") {
     bridgeError = message.error || "本机桥接器内部错误";
     debug("native-bridge-error", { error: bridgeError });
@@ -196,10 +200,6 @@ function ensureNativePort() {
         settle({ ok: false, message: bridgeError, requestId: id });
       }
       pendingInstall.clear();
-      for (const [id, settle] of pendingFormatRequests) {
-        settle({ ok: false, error: bridgeError, requestId: id });
-      }
-      pendingFormatRequests.clear();
       nativePort = null;
       failActiveTasks(bridgeError).catch(() => {});
     });
@@ -226,7 +226,7 @@ async function waitForBridge(timeoutMs = 10000) {
       if (!bridgeError) {
         bridgeError = (
           `本机桥接器未在 ${timeoutMs / 1000} 秒内响应。\n` +
-          "请确认已运行 setup-native-host.bat，Python 可用，并查看 bridge.log。"
+          `请确认已运行 ${setupCommand()}，Python 可用，并查看 bridge.log。`
         );
       }
       resolve(false);
@@ -259,7 +259,9 @@ function bridgeStatusPayload(connected) {
     ytDlp: bridgeYtDlp,
     diagnosis: bridgeDiagnosis,
     extensionId: chrome.runtime.id,
-    setupCommand: `setup-native-host.bat ${chrome.runtime.id}`
+    setupCommand: setupCommand(),
+    browserName: BROWSER_NAME,
+    browserLabel: BROWSER_LABEL
   };
 }
 
@@ -289,7 +291,7 @@ async function startDownload(message) {
     audioSpeed: "",
     videoEta: "",
     audioEta: "",
-    outputDirectory: settings.outputDirectory || "默认：Edge 浏览器下载目录",
+    outputDirectory: settings.outputDirectory || `默认：${BROWSER_LABEL} 浏览器下载目录`,
     status: "connecting",
     progress: 0,
     createdAt: Date.now(),
@@ -321,7 +323,8 @@ async function startDownload(message) {
       ytDlpPath: settings.ytDlpPath.trim(),
       outputDirectory: settings.outputDirectory.trim(),
       proxyUrl: normalizeProxyUrl(settings.proxyUrl),
-      useEdgeCookies: false,
+      browserName: BROWSER_NAME,
+      useBrowserCookies: false,
       cookiesFilePath: settings.cookiesFilePath.trim(),
       browserCookies
     });
@@ -334,51 +337,6 @@ async function startDownload(message) {
     debug("download-post-failed", { taskId: task.id, error: task.error });
     return { ok: false, error: task.error };
   }
-}
-
-async function requestAvailableFormats(message) {
-  const settings = await chrome.storage.local.get(DEFAULTS);
-  const browserCookies = settings.autoUseBrowserCookies ? await readYouTubeCookies() : [];
-  const connected = await waitForBridge();
-  if (!connected || !nativePort) {
-    return { ok: false, error: bridgeError || "本机桥接器未响应" };
-  }
-
-  const requestId = taskId();
-  const resultPromise = new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      pendingFormatRequests.delete(requestId);
-      resolve({ ok: false, error: "读取视频清晰度超时，请稍后重试" });
-    }, 90 * 1000);
-    pendingFormatRequests.set(requestId, (payload) => {
-      clearTimeout(timer);
-      resolve(payload);
-    });
-  });
-
-  try {
-    nativePort.postMessage({
-      action: "formats",
-      requestId,
-      url: message.url,
-      ytDlpPath: settings.ytDlpPath.trim(),
-      proxyUrl: normalizeProxyUrl(settings.proxyUrl),
-      useEdgeCookies: false,
-      cookiesFilePath: settings.cookiesFilePath.trim(),
-      browserCookies
-    });
-  } catch (error) {
-    pendingFormatRequests.delete(requestId);
-    return { ok: false, error: error.message || "无法读取视频清晰度" };
-  }
-
-  const result = await resultPromise;
-  return {
-    ok: Boolean(result.ok),
-    error: result.error || "",
-    heights: Array.isArray(result.heights) ? result.heights : [],
-    hasAudio: result.hasAudio !== false
-  };
 }
 
 async function requestDiagnosis() {
@@ -402,7 +360,7 @@ async function requestInstallTools(ytdlpOnly = false) {
   if (!connected || !nativePort) {
     return {
       ok: false,
-      message: bridgeError || "无法连接本机桥接器，请先运行 setup-native-host.bat",
+      message: bridgeError || `无法连接本机桥接器，请先运行 ${setupCommand()}`,
       ...bridgeStatusPayload(false)
     };
   }
@@ -412,7 +370,7 @@ async function requestInstallTools(ytdlpOnly = false) {
       pendingInstall.delete(requestId);
       resolve({
         ok: false,
-        message: "安装超时（超过 15 分钟）。请查看 bridge.log 或在 PowerShell 中手动安装依赖。",
+        message: "安装超时（超过 15 分钟）。请查看 bridge.log 或在终端中手动安装依赖。",
         requestId
       });
     }, 15 * 60 * 1000);
@@ -469,10 +427,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse(await startDownload(message));
       return;
     }
-    if (message.type === "get-formats") {
-      sendResponse(await requestAvailableFormats(message));
-      return;
-    }
     if (message.type === "get-downloads") {
       await taskStoreReady;
       const connected = await waitForBridge();
@@ -502,7 +456,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({
         ok: true,
         extensionId: chrome.runtime.id,
-        setupCommand: `setup-native-host.bat ${chrome.runtime.id}`
+        setupCommand: setupCommand(),
+        browserName: BROWSER_NAME,
+        browserLabel: BROWSER_LABEL,
+        extensionsPage: extensionsPage()
       });
       return;
     }

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Persistent Windows native-messaging bridge with yt-dlp progress events."""
+"""Cross-platform native-messaging bridge with yt-dlp progress events."""
 import json
 import os
+import platform
 import re
 import shutil
 import struct
@@ -14,8 +15,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 WRITE_LOCK = threading.Lock()
-LOG_PATH = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "YT-DLP-Edge" / "bridge.log"
-BRIDGE_VERSION = "1.4.3"
+SYSTEM = platform.system()
+IS_WINDOWS = SYSTEM == "Windows"
+IS_MACOS = SYSTEM == "Darwin"
+BRIDGE_VERSION = "1.8.0"
 INSTALL_LOCK = threading.Lock()
 DOWNLOAD_PRESETS = {
     "best": {"label": "最高质量", "format": "bestvideo*+bestaudio/best", "audio_only": False},
@@ -29,6 +32,88 @@ DOWNLOAD_PRESETS = {
 }
 
 
+def prepend_runtime_paths():
+    """Make Homebrew tools visible when Chrome was launched from Finder."""
+    if not IS_MACOS:
+        return
+    candidates = [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+    ]
+    current = os.environ.get("PATH", "").split(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join(
+        [path for path in candidates if path not in current] + current
+    )
+
+
+prepend_runtime_paths()
+
+
+def default_browser_name():
+    """Pick the browser used by the current platform when no name is supplied."""
+    configured = os.environ.get("YTDLP_BROWSER", "").strip().lower()
+    if configured in {"chrome", "edge", "chromium"}:
+        return configured
+    return "edge" if IS_WINDOWS else "chrome"
+
+
+def normalize_browser_name(value):
+    name = str(value or default_browser_name()).strip().lower()
+    return name if name in {"chrome", "edge", "chromium"} else default_browser_name()
+
+
+def browser_display_name(browser_name=None):
+    return {
+        "chrome": "Chrome",
+        "edge": "Edge",
+        "chromium": "Chromium",
+    }.get(normalize_browser_name(browser_name), "浏览器")
+
+
+def log_path():
+    if IS_WINDOWS:
+        root = Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+    elif IS_MACOS:
+        root = Path.home() / "Library" / "Logs"
+    else:
+        root = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
+    return root / "YT-DLP-Edge" / "bridge.log"
+
+
+LOG_PATH = log_path()
+
+
+def browser_preferences_paths(browser_name=None):
+    """Return likely Preferences files for the selected browser."""
+    browser = normalize_browser_name(browser_name)
+    home = Path.home()
+    if IS_WINDOWS:
+        root = Path(os.environ.get("LOCALAPPDATA", str(home)))
+        roots = {
+            "chrome": root / "Google" / "Chrome" / "User Data",
+            "edge": root / "Microsoft" / "Edge" / "User Data",
+            "chromium": root / "Chromium" / "User Data",
+        }
+    elif IS_MACOS:
+        root = home / "Library" / "Application Support"
+        roots = {
+            "chrome": root / "Google" / "Chrome",
+            "edge": root / "Microsoft Edge",
+            "chromium": root / "Chromium",
+        }
+    else:
+        root = Path(os.environ.get("XDG_CONFIG_HOME", str(home / ".config")))
+        roots = {
+            "chrome": root / "google-chrome",
+            "edge": root / "microsoft-edge",
+            "chromium": root / "chromium",
+        }
+    base = roots[browser]
+    return [base / "Default" / "Preferences", base / "Preferences"]
+
+
 def log(message):
     """Diagnostics only; native-messaging stdout must remain protocol-only."""
     try:
@@ -39,18 +124,18 @@ def log(message):
         pass
 
 
-def browser_download_directory():
-    """Read Edge's configured download directory, with the Windows default as fallback."""
-    preferences = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Edge" / "User Data" / "Default" / "Preferences"
-    try:
-        contents = preferences.read_text(encoding="utf-8", errors="ignore")
-        match = re.search(r'"default_directory"\s*:\s*"((?:\\.|[^"\\])*)"', contents)
-        if match:
-            configured = json.loads(f'"{match.group(1)}"').strip()
-            if configured:
-                return Path(configured).expanduser()
-    except OSError:
-        pass
+def browser_download_directory(browser_name=None):
+    """Read the selected Chromium browser's configured download directory."""
+    for preferences in browser_preferences_paths(browser_name):
+        try:
+            contents = preferences.read_text(encoding="utf-8", errors="ignore")
+            match = re.search(r'"default_directory"\s*:\s*"((?:\\.|[^"\\])*)"', contents)
+            if match:
+                configured = json.loads(f'"{match.group(1)}"').strip()
+                if configured:
+                    return Path(configured).expanduser()
+        except (OSError, json.JSONDecodeError):
+            continue
     return Path.home() / "Downloads"
 
 
@@ -74,18 +159,18 @@ def write_message(payload):
 
 
 def run_capture(command, timeout=120):
-    """Run a process hidden on Windows and capture combined output."""
-    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    """Run a process and capture combined output without opening a Windows console."""
     try:
-        completed = subprocess.run(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=timeout,
-            creationflags=creation_flags,
-            check=False,
-        )
+        options = {
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "timeout": timeout,
+            "check": False,
+        }
+        if IS_WINDOWS:
+            options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        completed = subprocess.run(command, **options)
         text = decode_process_line(completed.stdout).strip()
         return completed.returncode, text
     except FileNotFoundError as error:
@@ -111,7 +196,7 @@ def resolve_ytdlp(configured_path):
         if candidate.is_file():
             return [str(candidate)]
         raise ValueError(
-            "设置中的 yt-dlp.exe 路径不存在。\n"
+            "设置中的 yt-dlp 路径不存在。\n"
             f"路径: {candidate}\n"
             "请在扩展设置中修正路径，或留空以使用 PATH / python -m yt_dlp。"
         )
@@ -125,9 +210,13 @@ def resolve_ytdlp(configured_path):
     raise ValueError(
         "未找到 yt-dlp。\n"
         "新设备请在扩展弹窗点击「安装缺失工具」，或在本机执行：\n"
-        '  py -m pip install --user --upgrade "yt-dlp[default]"\n'
-        "也可在设置中填写 yt-dlp.exe 的完整路径。"
+        f'  {python_install_hint()}\n'
+        "也可在设置中填写 yt-dlp 的完整路径。"
     )
+
+
+def python_install_hint():
+    return f'"{sys.executable}" -m pip install --user --upgrade "yt-dlp[default]"'
 
 
 def diagnose_dependencies(configured_ytdlp_path=""):
@@ -172,10 +261,10 @@ def diagnose_dependencies(configured_ytdlp_path=""):
         "label": "Node.js",
         "detail": f"{node_version} ({node_path})" if node_version else "未找到（解析新版 YouTube 挑战需要）",
         "required": True,
-        "installHint": 'winget install -e --id OpenJS.NodeJS.LTS',
+        "installHint": "brew install node" if IS_MACOS else 'winget install -e --id OpenJS.NodeJS.LTS',
     }
 
-    # FFmpeg (merge high quality streams)
+    # FFmpeg (MP4 conversion and audio/video merging)
     ffmpeg_path = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
     ffmpeg_version = None
     if ffmpeg_path:
@@ -185,9 +274,9 @@ def diagnose_dependencies(configured_ytdlp_path=""):
     tools["ffmpeg"] = {
         "ok": bool(ffmpeg_version),
         "label": "FFmpeg",
-        "detail": f"{ffmpeg_version} ({ffmpeg_path})" if ffmpeg_version else "未找到（高画质音视频合并需要）",
-        "required": False,
-        "installHint": "winget install -e --id Gyan.FFmpeg",
+        "detail": f"{ffmpeg_version} ({ffmpeg_path})" if ffmpeg_version else "未找到（MP4 转换和音视频合并需要）",
+        "required": True,
+        "installHint": "brew install ffmpeg" if IS_MACOS else "winget install -e --id Gyan.FFmpeg",
     }
 
     missing_required = [name for name, info in tools.items() if info.get("required") and not info.get("ok")]
@@ -207,13 +296,32 @@ def winget_available():
     return bool(shutil.which("winget") or shutil.which("winget.exe"))
 
 
+def brew_available():
+    return bool(shutil.which("brew"))
+
+
 def install_ytdlp():
     command = [sys.executable, "-m", "pip", "install", "--user", "--upgrade", "yt-dlp[default]"]
     log(f"Installing yt-dlp: {' '.join(command)}")
     code, output = run_capture(command, timeout=600)
+    if code != 0 and IS_MACOS:
+        # Homebrew Python may enforce PEP 668. Retry only on macOS, where the
+        # user explicitly asked the extension to manage its local dependency.
+        compatible_command = [
+            sys.executable, "-m", "pip", "install", "--user", "--break-system-packages",
+            "--upgrade", "yt-dlp[default]",
+        ]
+        retry_code, retry_output = run_capture(compatible_command, timeout=600)
+        if retry_code == 0:
+            code, output = retry_code, retry_output
     tail = "\n".join(output.splitlines()[-12:])
     if code != 0:
-        return False, f"安装 yt-dlp 失败（退出码 {code}）。\n{tail}\n请手动执行: py -m pip install --user --upgrade \"yt-dlp[default]\""
+        if IS_MACOS and brew_available():
+            brew_code, brew_output = run_capture(["brew", "install", "yt-dlp"], timeout=900)
+            if brew_code == 0 and resolve_ytdlp_safe():
+                return True, f"已通过 Homebrew 安装 yt-dlp。\n{tail}"
+            tail = "\n".join(brew_output.splitlines()[-12:]) or tail
+        return False, f"安装 yt-dlp 失败（退出码 {code}）。\n{tail}\n请手动执行: {python_install_hint()}"
     # Clear path cache after install
     try:
         resolve_ytdlp("")
@@ -221,9 +329,16 @@ def install_ytdlp():
     except ValueError:
         return True, (
             "pip 已完成，但当前进程仍可能找不到 yt-dlp 脚本目录。\n"
-            "扩展会优先使用 python -m yt_dlp。若仍失败，请重新加载扩展或注销后再试。\n"
+            "扩展会优先使用 python -m yt_dlp。若仍失败，请重新加载扩展后再试。\n"
             f"{tail}"
         )
+
+
+def resolve_ytdlp_safe():
+    try:
+        return bool(resolve_ytdlp(""))
+    except ValueError:
+        return False
 
 
 def install_with_winget(package_id, display_name, check_names):
@@ -264,6 +379,30 @@ def install_with_winget(package_id, display_name, check_names):
     return False, f"安装 {display_name} 失败（退出码 {code}）。\n{tail}\n也可手动执行: winget install -e --id {package_id}"
 
 
+def install_with_brew(formula, display_name, check_names):
+    """Install a macOS dependency through Homebrew when it is available."""
+    if any(shutil.which(name) for name in check_names):
+        return True, f"{display_name} 已存在，跳过"
+    if not brew_available():
+        return False, f"未找到 Homebrew，无法自动安装 {display_name}。请手动执行: brew install {formula}"
+    command = ["brew", "install", formula]
+    log(f"Installing {display_name} via Homebrew: {formula}")
+    code, output = run_capture(command, timeout=900)
+    tail = "\n".join(output.splitlines()[-15:])
+    found = any(shutil.which(name) for name in check_names)
+    if found:
+        return True, f"{display_name} 安装成功。\n{tail}"
+    return False, f"安装 {display_name} 失败（退出码 {code}）。\n{tail}\n也可手动执行: brew install {formula}"
+
+
+def install_dependency(package_id, formula, display_name, check_names):
+    if IS_MACOS:
+        return install_with_brew(formula, display_name, check_names)
+    if IS_WINDOWS:
+        return install_with_winget(package_id, display_name, check_names)
+    return False, f"当前系统不支持自动安装 {display_name}，请手动安装后重试。"
+
+
 def install_missing_tools(auto_only_ytdlp=False):
     """Install missing runtime tools. Returns a structured result for the UI."""
     with INSTALL_LOCK:
@@ -280,18 +419,17 @@ def install_missing_tools(auto_only_ytdlp=False):
 
         if not auto_only_ytdlp:
             if not before["tools"]["node"]["ok"]:
-                ok, detail = install_with_winget("OpenJS.NodeJS.LTS", "Node.js LTS", ["node", "node.exe"])
+                ok, detail = install_dependency("OpenJS.NodeJS.LTS", "node", "Node.js LTS", ["node", "node.exe"])
                 steps.append({"tool": "node", "ok": ok, "detail": detail})
                 overall_ok = overall_ok and ok
             else:
                 steps.append({"tool": "node", "ok": True, "detail": "已存在，跳过"})
 
             if not before["tools"]["ffmpeg"]["ok"]:
-                ok, detail = install_with_winget("Gyan.FFmpeg", "FFmpeg", ["ffmpeg", "ffmpeg.exe"])
+                ok, detail = install_dependency("Gyan.FFmpeg", "ffmpeg", "FFmpeg", ["ffmpeg", "ffmpeg.exe"])
                 steps.append({"tool": "ffmpeg", "ok": ok, "detail": detail})
-                # FFmpeg is optional for basic downloads
                 if not ok:
-                    steps[-1]["detail"] += "\n（FFmpeg 可选：无合并时部分高画质任务可能失败）"
+                    steps[-1]["detail"] += "\n（FFmpeg 是普通视频输出 MP4 所必需的组件）"
             else:
                 steps.append({"tool": "ffmpeg", "ok": True, "detail": "已存在，跳过"})
 
@@ -314,15 +452,15 @@ def humanize_error(raw_error):
     """Map common yt-dlp / environment failures to actionable Chinese guidance."""
     text = (raw_error or "").strip()
     if not text:
-        return "下载失败，但未捕获到具体错误输出。请查看桥接日志 %LOCALAPPDATA%\\YT-DLP-Edge\\bridge.log"
+        return f"下载失败，但未捕获到具体错误输出。请查看桥接日志 {LOG_PATH}"
 
     patterns = [
         (
             r"Sign in to confirm you.?re not a bot|confirm you.?re not a bot",
             "YouTube 要求登录验证（机器人检测）。\n"
             "处理建议：\n"
-            "1. 在 Edge 打开 youtube.com 并确保已登录；\n"
-            "2. 扩展设置中保持「自动使用 Edge Cookie」开启；\n"
+            "1. 在当前浏览器打开 youtube.com 并确保已登录；\n"
+            "2. 扩展设置中保持「自动使用浏览器 Cookie」开启；\n"
             "3. 确认代理出口与浏览器一致（默认 socks5h://127.0.0.1:7890）；\n"
             "4. 刷新页面后重试。",
         ),
@@ -332,7 +470,7 @@ def humanize_error(raw_error):
             "处理建议：\n"
             "1. 扩展弹窗点击「安装缺失工具」升级 yt-dlp[default]；\n"
             "2. 确认已安装 Node.js；\n"
-            "3. 手动: py -m pip install --user --upgrade \"yt-dlp[default]\"",
+            f"3. 手动: {python_install_hint()}",
         ),
         (
             r"Unable to download API page|HTTP Error 429|Too Many Requests",
@@ -350,17 +488,17 @@ def humanize_error(raw_error):
         ),
         (
             r"ffmpeg|ffprobe",
-            "FFmpeg 不可用，高画质音视频无法合并。\n"
-            "请点击扩展弹窗「安装缺失工具」，或执行: winget install -e --id Gyan.FFmpeg",
+            "FFmpeg 不可用，普通视频无法输出 MP4 或完成音视频合并。\n"
+            "请点击扩展弹窗「安装缺失工具」，或按系统执行: brew install ffmpeg / winget install -e --id Gyan.FFmpeg",
         ),
         (
             r"node(\.exe)?.*(not found|不是内部或外部命令|No such file)|js runtime|JavaScript runtime",
             "未找到 Node.js，无法处理 YouTube JavaScript 挑战。\n"
-            "请点击「安装缺失工具」，或执行: winget install -e --id OpenJS.NodeJS.LTS",
+            "请点击「安装缺失工具」，或按系统执行: brew install node / winget install -e --id OpenJS.NodeJS.LTS",
         ),
         (
             r"yt-dlp.*(not found|不是内部或外部命令)|No such file or directory.*yt-dlp",
-            "未找到 yt-dlp。\n请点击「安装缺失工具」，或: py -m pip install --user --upgrade \"yt-dlp[default]\"",
+            f"未找到 yt-dlp。\n请点击「安装缺失工具」，或: {python_install_hint()}",
         ),
         (
             r"Private video|This video is private|Video unavailable|copyright",
@@ -382,7 +520,7 @@ def humanize_error(raw_error):
 
 
 def write_browser_cookies(cookies):
-    """Write Chrome cookie API values as a disposable Netscape cookie file."""
+    """Write browser cookie API values as a disposable Netscape cookie file."""
     descriptor, raw_path = tempfile.mkstemp(prefix="ytdlp-edge-", suffix=".cookies.txt")
     with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("# Netscape HTTP Cookie File\n")
@@ -419,27 +557,13 @@ def normalize_subtitle_track(value):
 
 def normalize_download_preset(value):
     """Accept only the format presets exposed by the page dialog."""
-    preset = str(value or "best").strip().lower()
-    if preset in DOWNLOAD_PRESETS:
-        return preset
-    match = re.fullmatch(r"height-(\d{3,4})", preset)
-    height = int(match.group(1)) if match else 0
-    return preset if 144 <= height <= 4320 else "best"
+    preset = str(value or "1080").strip().lower()
+    return preset if preset in DOWNLOAD_PRESETS else "1080"
 
 
 def download_profile_for_preset(preset):
-    """Build a validated height-capped profile for dynamically probed formats."""
-    if preset in DOWNLOAD_PRESETS:
-        return DOWNLOAD_PRESETS[preset]
-    match = re.fullmatch(r"height-(\d{3,4})", str(preset or ""))
-    height = int(match.group(1)) if match else 0
-    if not 144 <= height <= 4320:
-        return DOWNLOAD_PRESETS["best"]
-    return {
-        "label": f"{height}p",
-        "format": f"bestvideo[height<={height}]+bestaudio/best[height<={height}]",
-        "audio_only": False,
-    }
+    """Return the fixed manual preset selected by the page dialog."""
+    return DOWNLOAD_PRESETS.get(preset, DOWNLOAD_PRESETS["1080"])
 
 
 def emit_task(task):
@@ -561,12 +685,17 @@ def update_media_progress(task, stream_kind, progress, speed, eta):
 def run_download(task, command, subtitle_command=None, temporary_cookie_file=None):
     last_output = []
     try:
-        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        process = subprocess.Popen(
-            command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=False, bufsize=0,
-            creationflags=creation_flags, close_fds=True,
-        )
+        options = {
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": False,
+            "bufsize": 0,
+            "close_fds": True,
+        }
+        if IS_WINDOWS:
+            options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        process = subprocess.Popen(command, **options)
         log(f"yt-dlp started for task {task['id']} (pid={process.pid})")
         task["status"] = "downloading"
         emit_task(task)
@@ -610,11 +739,7 @@ def run_download(task, command, subtitle_command=None, temporary_cookie_file=Non
             if subtitle_command:
                 subtitle_output = []
                 try:
-                    subtitle_process = subprocess.Popen(
-                        subtitle_command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT, text=False, bufsize=0,
-                        creationflags=creation_flags, close_fds=True,
-                    )
+                    subtitle_process = subprocess.Popen(subtitle_command, **options)
                     log(f"subtitle download started for task {task['id']} (pid={subtitle_process.pid})")
                     for line in subtitle_process.stdout:
                         text = decode_process_line(line).strip()
@@ -689,120 +814,6 @@ def ensure_ytdlp_ready(configured_path, auto_install=True):
         return resolve_ytdlp(configured_path)
 
 
-def parse_info_json(output):
-    """Extract yt-dlp's JSON object even when warnings precede it."""
-    decoder = json.JSONDecoder()
-    text = output or ""
-    for match in re.finditer(r"\{", text):
-        try:
-            value, _ = decoder.raw_decode(text[match.start():])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict) and isinstance(value.get("formats"), list):
-            return value
-    return None
-
-
-def probe_formats(message):
-    """Read available video heights without downloading the media."""
-    url = message.get("url", "")
-    if not isinstance(url, str) or not is_youtube_video_url(url):
-        raise ValueError("仅支持标准 YouTube 视频链接，无法读取清晰度。")
-    yt_dlp_cmd = ensure_ytdlp_ready(message.get("ytDlpPath", ""), auto_install=True)
-    option_block = [
-        "--ignore-config", "--no-playlist", "--windows-filenames", "--newline",
-        "--js-runtimes", "node", "--remote-components", "ejs:github",
-        "--legacy-server-connect", "--socket-timeout", "20",
-        "--retries", "3", "--fragment-retries", "3", "--extractor-retries", "2",
-    ]
-    command = [
-        *yt_dlp_cmd, *option_block, "--skip-download", "--dump-single-json", "--no-warnings", url,
-    ]
-    launcher_len = len(yt_dlp_cmd)
-
-    def inject_after_launcher(extra):
-        command[launcher_len:launcher_len] = extra
-
-    proxy_url = str(message.get("proxyUrl") or "").strip()
-    if re.fullmatch(r"http://(?:127\.0\.0\.1|localhost):7890/?", proxy_url, re.IGNORECASE):
-        proxy_url = "socks5h://127.0.0.1:7890"
-    if proxy_url:
-        inject_after_launcher(["--proxy", proxy_url])
-
-    cookies_file_path = str(message.get("cookiesFilePath") or "").strip()
-    browser_cookies = message.get("browserCookies") or []
-    if cookies_file_path:
-        cookie_path = Path(cookies_file_path).expanduser()
-        if not cookie_path.is_file():
-            raise ValueError(f"备用 cookies.txt 不存在: {cookie_path}")
-        inject_after_launcher(["--cookies", str(cookie_path)])
-    elif browser_cookies:
-        temporary_cookie_file = write_browser_cookies(browser_cookies)
-        inject_after_launcher(["--cookies", str(temporary_cookie_file)])
-    else:
-        temporary_cookie_file = None
-        if message.get("useEdgeCookies", True):
-            inject_after_launcher(["--cookies-from-browser", "edge"])
-
-    def strip_cookie_options(value):
-        stripped = []
-        skip_next = False
-        for item in value:
-            if skip_next:
-                skip_next = False
-                continue
-            if item in {"--cookies", "--cookies-from-browser"}:
-                skip_next = True
-                continue
-            stripped.append(item)
-        return stripped
-
-    def run_format_probe(probe_command):
-        exit_code, output = run_capture(probe_command, timeout=120)
-        if exit_code != 0:
-            raise ValueError(humanize_error(output or f"yt-dlp exited with code {exit_code}"))
-        info = parse_info_json(output)
-        if not info:
-            raise ValueError("yt-dlp 未返回可解析的清晰度信息。")
-        return info
-
-    try:
-        try:
-            info = run_format_probe(command)
-        except ValueError:
-            can_retry_without_cookies = bool(browser_cookies) or (
-                not cookies_file_path and bool(message.get("useEdgeCookies", False))
-            )
-            if not can_retry_without_cookies:
-                raise
-            log("Format probe with browser cookies failed; retrying without cookies")
-            info = run_format_probe(strip_cookie_options(command))
-        heights = set()
-        has_audio = False
-        for item in info.get("formats", []):
-            if not isinstance(item, dict):
-                continue
-            if codec_is_present(item.get("acodec")):
-                has_audio = True
-            video_codec = str(item.get("vcodec") or "").lower()
-            format_id = str(item.get("format_id") or "").lower()
-            if format_id.startswith("sb") or video_codec == "mjpeg" or not codec_is_present(video_codec):
-                continue
-            try:
-                height = int(item.get("height"))
-            except (TypeError, ValueError):
-                continue
-            if 144 <= height <= 4320:
-                heights.add(height)
-        return {"ok": True, "heights": sorted(heights, reverse=True), "hasAudio": has_audio}
-    finally:
-        if browser_cookies and "temporary_cookie_file" in locals() and temporary_cookie_file:
-            try:
-                Path(temporary_cookie_file).unlink(missing_ok=True)
-            except OSError:
-                pass
-
-
 def queue_download(message):
     url = message.get("url", "")
     if not isinstance(url, str) or not is_youtube_video_url(url):
@@ -815,14 +826,15 @@ def queue_download(message):
     download_preset = normalize_download_preset(message.get("downloadPreset"))
     download_profile = download_profile_for_preset(download_preset)
 
-    # Soft-check optional tools and log; node is strongly recommended
+    # Check runtime tools and keep a useful log entry before starting the task.
     diagnosis = diagnose_dependencies(message.get("ytDlpPath", ""))
     if not diagnosis["tools"]["node"]["ok"]:
         log("WARNING: Node.js missing; YouTube JS challenges may fail")
     if not diagnosis["tools"]["ffmpeg"]["ok"]:
-        log("WARNING: FFmpeg missing; high-quality merges may fail")
+        log("WARNING: FFmpeg missing; normal video downloads cannot be converted to MP4")
 
-    output_dir = Path(message.get("outputDirectory") or browser_download_directory()).expanduser()
+    browser_name = normalize_browser_name(message.get("browserName"))
+    output_dir = Path(message.get("outputDirectory") or browser_download_directory(browser_name)).expanduser()
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
     except OSError as error:
@@ -833,13 +845,16 @@ def queue_download(message):
     proxy_url = str(message.get("proxyUrl") or "").strip()
     if re.fullmatch(r"http://(?:127\.0\.0\.1|localhost):7890/?", proxy_url, re.IGNORECASE):
         proxy_url = "socks5h://127.0.0.1:7890"
-    use_edge_cookies = message.get("useEdgeCookies", True) is not False
+    use_browser_cookies = message.get(
+        "useBrowserCookies",
+        message.get("useEdgeCookies", True),
+    ) is not False
     cookies_file_path = str(message.get("cookiesFilePath") or "").strip()
     browser_cookies = message.get("browserCookies") or []
     if cookies_file_path and not Path(cookies_file_path).expanduser().is_file():
         raise ValueError(
             f"备用 cookies.txt 不存在: {cookies_file_path}\n"
-            "请修正设置中的路径，或改用自动 Edge Cookie。"
+            "请修正设置中的路径，或改用自动浏览器 Cookie。"
         )
     task = {
         "id": message["taskId"], "title": message.get("title") or "YouTube video", "url": url,
@@ -862,6 +877,9 @@ def queue_download(message):
         "--retry-sleep", "extractor:1",
         "--retry-sleep", "http:exp=1:20", "--retry-sleep", "fragment:exp=1:20",
     ]
+    postprocess_options = [] if download_profile["audio_only"] else [
+        "--merge-output-format", "mp4", "--recode-video", "mp4",
+    ]
 
     def inject_after_launcher(command, extra):
         """Insert CLI flags immediately after the yt-dlp launcher tokens."""
@@ -870,7 +888,7 @@ def queue_download(message):
         command[launcher_len:launcher_len] = extra
 
     command = [
-        *yt_dlp_cmd, *option_block, "--format", download_profile["format"], "--progress",
+        *yt_dlp_cmd, *option_block, *postprocess_options, "--format", download_profile["format"], "--progress",
         "--progress-template", "download:YT_DLP_PROGRESS|%(progress._percent_str)s|%(progress.speed)s|%(progress.eta)s|%(info.vcodec)s|%(info.acodec)s",
         "--print", "after_move:YT_DLP_FILE:%(filepath)s", "-P", str(output_dir), url,
     ]
@@ -894,9 +912,9 @@ def queue_download(message):
         temporary_cookie_file = write_browser_cookies(browser_cookies)
         for candidate in (command, subtitle_command):
             inject_after_launcher(candidate, ["--cookies", str(temporary_cookie_file)])
-    elif use_edge_cookies:
+    elif use_browser_cookies:
         for candidate in (command, subtitle_command):
-            inject_after_launcher(candidate, ["--cookies-from-browser", "edge"])
+            inject_after_launcher(candidate, ["--cookies-from-browser", browser_name])
     subtitle_summary = "none"
     if subtitle_track:
         subtitle_summary = "skipped-audio" if download_profile["audio_only"] else f"{subtitle_track['languageCode']}/{subtitle_track['kind']}"
@@ -904,7 +922,8 @@ def queue_download(message):
         f"Queued task {task['id']} (output={output_dir}, preset={download_preset}, subtitles={subtitle_summary}, "
         f"proxy={bool(proxy_url)}, cookiesFile={bool(cookies_file_path)}, "
         f"browserCookies={len(browser_cookies)}, "
-        f"edgeCookies={use_edge_cookies and not cookies_file_path and not browser_cookies}, "
+        f"browser={browser_name}, "
+        f"browserCookiesFallback={use_browser_cookies and not cookies_file_path and not browser_cookies}, "
         f"ytdlp={' '.join(yt_dlp_cmd)})"
     )
     emit_task(task)
@@ -917,7 +936,7 @@ def main():
         try:
             message = read_message()
             if message is None:
-                log("Native bridge closed by Edge")
+                log("Native bridge closed by browser")
                 return
             action = message.get("action")
             log(f"Received action: {action}")
@@ -956,26 +975,6 @@ def main():
                             "requestId": message.get("requestId"),
                         })
                 threading.Thread(target=worker, daemon=True).start()
-            elif action == "formats":
-                def format_worker():
-                    try:
-                        result = probe_formats(message)
-                        write_message({
-                            "event": "formats-result",
-                            "ok": result["ok"],
-                            "heights": result["heights"],
-                            "hasAudio": result["hasAudio"],
-                            "requestId": message.get("requestId"),
-                        })
-                    except Exception as error:
-                        log(f"format probe error: {error}")
-                        write_message({
-                            "event": "formats-result",
-                            "ok": False,
-                            "error": humanize_error(str(error)),
-                            "requestId": message.get("requestId"),
-                        })
-                threading.Thread(target=format_worker, daemon=True).start()
             elif action == "download":
                 try:
                     queue_download(message)

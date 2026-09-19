@@ -1,6 +1,8 @@
 # Local native-host artifacts (machine-specific)
 native-host.cmd
 com.local.ytdlp_downloader.json
+native-host
+.extension-id
 
 # Local screenshots / OS junk
 Screenshot *.png

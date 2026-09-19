@@ -9,11 +9,11 @@
 <body>
   <main>
     <h1>YT-DLP 下载设置</h1>
-    <p>留空 yt-dlp 路径会直接调用已加入系统 PATH 的 <code>yt-dlp.exe</code>，或回退到 <code>python -m yt_dlp</code>。</p>
+    <p>留空 yt-dlp 路径会直接调用系统 PATH 中的 <code>yt-dlp</code>，或回退到 <code>python -m yt_dlp</code>。</p>
 
     <section class="setup-box" aria-labelledby="setup-title">
       <h2 id="setup-title">新设备安装</h2>
-      <p class="hint">在扩展目录打开 PowerShell，运行下方命令（脚本会注册桥接并尽量自动安装 yt-dlp / Node / FFmpeg）：</p>
+      <p class="hint">在扩展目录打开终端，运行下方命令（脚本会注册桥接并尽量自动安装 yt-dlp / Node / FFmpeg）：</p>
       <pre id="setup-command" class="setup-command">正在读取扩展 ID…</pre>
       <div class="actions">
         <button id="copy-setup" type="button" class="secondary">复制安装命令</button>
@@ -25,12 +25,12 @@
 
     <form id="settings-form">
       <label>
-        yt-dlp.exe 路径（可选）
-        <input id="yt-dlp-path" type="text" placeholder="C:\\Tools\\yt-dlp.exe">
+        yt-dlp 路径（可选）
+        <input id="yt-dlp-path" type="text" placeholder="/opt/homebrew/bin/yt-dlp">
       </label>
       <label>
         下载目录（可选）
-        <input id="output-directory" type="text" placeholder="默认：Edge 浏览器下载目录">
+        <input id="output-directory" type="text" placeholder="默认：当前浏览器下载目录">
       </label>
       <label>
         代理地址（留空则直连）
@@ -38,11 +38,11 @@
       </label>
       <label class="checkbox-label">
         <input id="auto-browser-cookies" type="checkbox">
-        自动使用当前 Edge 的 YouTube 登录 Cookie（推荐）
+        自动使用当前浏览器的 YouTube 登录 Cookie（推荐）
       </label>
       <label>
         YouTube cookies.txt 路径（可选备用）
-        <input id="cookies-file-path" type="text" placeholder="C:\\path\\to\\youtube-cookies.txt">
+        <input id="cookies-file-path" type="text" placeholder="/path/to/youtube-cookies.txt">
       </label>
       <p class="hint">自动读取 Cookie 不会上传或保存。cookies.txt 是自动读取失败时的备用方案；不要分享该文件。本机 7890 的 HTTP 代理会自动改为 socks5h。</p>
       <div class="actions">

@@ -7,6 +7,15 @@ const installMessage = document.querySelector("#install-message");
 const installButton = document.querySelector("#install-tools");
 let currentTasks = [];
 
+function fallbackSetupCommand() {
+  const userAgent = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+  if (/Macintosh|Mac OS X/i.test(userAgent)) {
+    const browser = /\bEdg\//i.test(userAgent) ? "edge" : "chrome";
+    return `./setup-native-host.sh ${chrome.runtime.id} --browser ${browser}`;
+  }
+  return `setup-native-host.bat ${chrome.runtime.id}`;
+}
+
 const stateLabel = { connecting: "正在连接", queued: "等待开始", downloading: "正在下载", completed: "已完成", error: "下载失败" };
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
@@ -87,7 +96,7 @@ function renderDeps(result) {
     setupHint.hidden = false;
     setupHint.textContent = result?.setupCommand
       ? `新设备请在扩展目录运行：${result.setupCommand}`
-      : "请先运行 setup-native-host.bat 注册本机桥接器。";
+      : `请先运行 ${fallbackSetupCommand()} 注册本机桥接器。`;
     installButton.disabled = true;
     return;
   }
@@ -114,7 +123,7 @@ function renderDeps(result) {
   if (missingRequired.length || missingOptional.length) {
     installMessage.textContent = missingRequired.length
       ? `缺少必需工具：${missingRequired.join(", ")}。可点击「安装缺失工具」。`
-      : `可选工具缺失：${missingOptional.join(", ")}（高画质合并可能需要 FFmpeg）。`;
+      : `非必需工具缺失：${missingOptional.join(", ")}`;
     installMessage.className = "install-message warn";
   } else {
     installMessage.textContent = diagnosis.bridgeVersion
@@ -140,7 +149,7 @@ async function refresh() {
     statusElement.className = "status error";
     setupHint.hidden = false;
     setupHint.textContent = (result?.bridgeError || "未知错误") +
-      (result?.setupCommand ? `\n\n新设备安装命令：\n${result.setupCommand}` : "");
+      `\n\n新设备安装命令：\n${result?.setupCommand || fallbackSetupCommand()}`;
   } else {
     const ver = result.bridgeVersion ? ` v${result.bridgeVersion}` : "";
     statusElement.textContent = `本机下载器已连接${ver}；进度实时更新`;
